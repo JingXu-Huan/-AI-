@@ -56,9 +56,9 @@ class TestImagePreprocessor:
         # With no steps, output should equal input (modulo copy)
         np.testing.assert_array_equal(result, img)
 
-    def test_edge_enhancement_output_shape(self):
+    def test_legacy_flags_do_not_break_processing(self):
         img = self._make_image()
-        pp = ImagePreprocessor(denoise=False, clahe=False, edge_enhancement=True)
+        pp = ImagePreprocessor(denoise=True, clahe=True, edge_enhancement=True)
         result = pp.process(img)
         assert result.shape == img.shape
 
@@ -249,6 +249,27 @@ class TestYOLODetectorHelpers:
         assert dets[0]["type"] == "pipe_leak"
         assert dets[0]["location"] == "A区-3号楼"
         assert dets[0]["severity"] == "high"
+
+    def test_detect_image_uses_model_names_fallback(self):
+        """When config map misses a class, use the model's own label."""
+        detector = self._make_detector_no_model()
+        detector._model_names = {15: "cat"}
+
+        fake_box = MagicMock()
+        fake_box.cls = [MagicMock(item=lambda: 15)]
+        fake_box.conf = [MagicMock(item=lambda: 0.85)]
+        fake_box.xyxy = [MagicMock(tolist=lambda: [3.8, 26.8, 447.5, 421.3])]
+
+        fake_result = MagicMock()
+        fake_result.boxes = [fake_box]
+        detector._model.predict.return_value = [fake_result]
+
+        img = np.zeros((480, 640, 3), dtype=np.uint8)
+        dets = detector.detect_image(img, location="测试区")
+
+        assert len(dets) == 1
+        assert dets[0]["type"] == "cat"
+        assert dets[0]["location"] == "测试区"
 
     def test_detect_image_no_detections(self):
         detector = self._make_detector_no_model()

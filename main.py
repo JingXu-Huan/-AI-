@@ -5,15 +5,14 @@ Entry point for the YOLO-based infrastructure perception layer.
 
 Usage
 -----
-  python main.py --image path/to/image.jpg --location "A区-3号楼"
-  python main.py --video path/to/video.mp4 --location "B区" --frame-interval 15
-  python main.py --image path/to/image.jpg --output result.json --visualize
+  uv run ai-inspect --image path/to/image.jpg --location "A区-3号楼"
+  uv run ai-inspect --video path/to/video.mp4 --location "B区" --frame-interval 15
+  uv run ai-inspect --image path/to/image.jpg --output result.json --visualize
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 

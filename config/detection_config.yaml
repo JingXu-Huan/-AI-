@@ -1,20 +1,19 @@
 # Detection configuration for the YOLO-based perception layer
 
 model:
-  # Path to a custom-trained YOLO weights file, or a pre-trained model name
+  # 路径指向自定义训练的YOLO权重文件，或预训练的模型名称
   # e.g. "yolov8n.pt", "yolov8s.pt", or an absolute path to fine-tuned weights
   weights: "yolov8n.pt"
-  # Confidence threshold: detections below this score are discarded
+  # 置信阈值：低于此分数的检测结果被舍弃
   confidence_threshold: 0.4
-  # IoU threshold for Non-Maximum Suppression
+  # 非最大抑制的IoU阈值
   iou_threshold: 0.45
   # Maximum number of detections per image
   max_detections: 100
   # Input image size fed to the model (square)
   image_size: 640
 
-# Mapping from YOLO class index to human-readable damage type.
-# Update these indices to match the class order in your custom-trained model.
+# 将这些索引更新为与你自定义训练模型中的类排序相匹配.
 class_map:
   0: "road_crack"
   1: "pothole"
@@ -28,12 +27,12 @@ severity:
   medium: 0.50
   # confidence < medium → "low"
 
-# Preprocessing options applied to each frame before inference
+# 预处理配置：现在只保留“去噪”这一项，其他参数保留兼容
 preprocessing:
-  denoise: true           # Apply Gaussian denoising
-  edge_enhancement: false # Apply Laplacian edge enhancement
-  clahe: true             # Contrast-Limited Adaptive Histogram Equalization
-  # Note: input resizing is handled internally by YOLO (imgsz above)
+  denoise: true           # 是否开启高斯去噪（推荐新手先保持开启）
+  edge_enhancement: false # 兼容旧配置，当前不再使用
+  clahe: true             # 兼容旧配置，当前不再使用
+  # 注意：图片缩放由 YOLO 内部自动处理（见 imgsz）
 
 # Location labels used when a geographic tag is not available
 default_location: "未知区域"

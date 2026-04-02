@@ -19,7 +19,7 @@
 | 功能 | 实现 |
 |------|------|
 | 目标检测 | YOLOv8（`ultralytics`） |
-| 图像预处理 | OpenCV：去噪、CLAHE 对比度增强、边缘增强 |
+| 图像预处理 | OpenCV：基础去噪（高斯模糊） |
 | 结构化输出 | JSON（类型、置信度、位置、严重程度、边界框） |
 | 可检测对象 | 路面裂缝、坑洞、管道泄漏、积水/漏水、设备损坏 |
 | 视频支持 | 逐帧检测，可配置采样间隔 |
@@ -54,12 +54,12 @@
 ```
 .
 ├── config/
-│   └── detection_config.yaml   # 模型、检测阈值、预处理开关等配置
+│   └── detection_config.yaml   # 模型、检测阈值、基础预处理配置
 ├── models/                     # 存放自定义训练权重（.pt 文件）
 ├── perception/
 │   ├── __init__.py
 │   ├── detector.py             # YOLODetector：核心检测类
-│   ├── preprocessor.py         # ImagePreprocessor：OpenCV 预处理流水线
+│   ├── preprocessor.py         # ImagePreprocessor：基础图片预处理
 │   └── utils/
 │       ├── __init__.py
 │       ├── output.py           # 结构化 JSON 输出格式化
@@ -74,10 +74,10 @@
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 安装依赖（推荐 `uv`）
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 2. 配置
@@ -102,14 +102,14 @@ class_map:                       # YOLO 类别索引 → 损坏类型名称
 
 ```bash
 # 检测单张图片
-python main.py --image path/to/image.jpg --location "A区-3号楼"
+uv run ai-inspect --image path/to/image.jpg --location "A区-3号楼"
 
 # 检测图片并保存可视化结果
-python main.py --image path/to/image.jpg --location "A区-3号楼" \
-               --save-viz output_annotated.jpg --output results.json
+uv run ai-inspect --image path/to/image.jpg --location "A区-3号楼" \
+                 --save-viz output_annotated.jpg --output results.json
 
 # 检测视频（每30帧采样一次）
-python main.py --video path/to/video.mp4 --location "B区" --frame-interval 15
+uv run ai-inspect --video path/to/video.mp4 --location "B区" --frame-interval 15
 ```
 
 ### 4. 在代码中使用
@@ -131,6 +131,12 @@ annotated = draw_detections(img, detections)
 cv2.imwrite("annotated.jpg", annotated)
 ```
 
+如果你更习惯直接运行脚本，也可以使用：
+
+```bash
+uv run python main.py --image path/to/image.jpg --location "A区-3号楼"
+```
+
 ---
 
 ## 训练自定义模型
@@ -148,7 +154,7 @@ yolo detect train data=campus_damage.yaml model=yolov8n.pt epochs=100 imgsz=640
 ## 运行测试
 
 ```bash
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ---
@@ -157,6 +163,6 @@ python -m pytest tests/ -v
 
 - **Python 3.10+**
 - **YOLOv8** (`ultralytics`) – 目标检测
-- **OpenCV** – 图像预处理（去噪、CLAHE、边缘增强）
+- **OpenCV** – 图像预处理（基础去噪）
 - **NumPy** – 数组操作
 - **PyYAML** – 配置文件解析

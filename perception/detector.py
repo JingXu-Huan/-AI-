@@ -20,7 +20,6 @@ Usage example
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +72,7 @@ class YOLODetector:
         )
 
         self._model = self._load_model()
+        self._model_names = self._extract_model_names(self._model)
 
     # ------------------------------------------------------------------
     # Public API
@@ -198,15 +198,23 @@ class YOLODetector:
 
         model = YOLO(self._weights)
 
-        # If a custom class map was provided in config, override the model's
-        # built-in names so that downstream code always uses our labels.
-        # NOTE: model.model.names is an internal ultralytics attribute.
-        # _run_inference already falls back to self._class_map for every box,
-        # so removing this block is safe if it breaks with a future version.
-        if self._class_map and hasattr(model, 'model') and hasattr(model.model, 'names'):
-            model.model.names = self._class_map  # type: ignore[attr-defined]
-
         return model
+
+    @staticmethod
+    def _extract_model_names(model: Any) -> dict[int, str]:
+        """从加载的 YOLO 模型中提取人类可读的类名."""
+        candidates = (
+            getattr(model, "names", None),
+            getattr(getattr(model, "model", None), "names", None),
+        )
+
+        for names in candidates:
+            if isinstance(names, dict):
+                return {int(k): str(v) for k, v in names.items()}
+            if isinstance(names, (list, tuple)):
+                return {int(i): str(v) for i, v in enumerate(names)}
+
+        return {}
 
     def _run_inference(self, image: np.ndarray) -> list[dict[str, Any]]:
         """Run YOLO inference and convert results to raw detection dicts."""
@@ -227,7 +235,10 @@ class YOLODetector:
                 continue
             for box in boxes:
                 cls_idx = int(box.cls[0].item())
-                class_name = self._class_map.get(cls_idx, f"class_{cls_idx}")
+                class_name = self._class_map.get(
+                    cls_idx,
+                    self._model_names.get(cls_idx, f"class_{cls_idx}"),
+                )
                 confidence = float(box.conf[0].item())
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 raw_detections.append(
