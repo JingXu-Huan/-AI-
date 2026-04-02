@@ -1,0 +1,39 @@
+# Detection configuration for the YOLO-based perception layer
+
+model:
+  # Path to a custom-trained YOLO weights file, or a pre-trained model name
+  # e.g. "yolov8n.pt", "yolov8s.pt", or an absolute path to fine-tuned weights
+  weights: "yolov8n.pt"
+  # Confidence threshold: detections below this score are discarded
+  confidence_threshold: 0.4
+  # IoU threshold for Non-Maximum Suppression
+  iou_threshold: 0.45
+  # Maximum number of detections per image
+  max_detections: 100
+  # Input image size fed to the model (square)
+  image_size: 640
+
+# Mapping from YOLO class index to human-readable damage type.
+# Update these indices to match the class order in your custom-trained model.
+class_map:
+  0: "road_crack"
+  1: "pothole"
+  2: "pipe_leak"
+  3: "water_accumulation"
+  4: "equipment_damage"
+
+# Severity thresholds based on detection confidence score
+severity:
+  high: 0.75
+  medium: 0.50
+  # confidence < medium → "low"
+
+# Preprocessing options applied to each frame before inference
+preprocessing:
+  denoise: true           # Apply Gaussian denoising
+  edge_enhancement: false # Apply Laplacian edge enhancement
+  clahe: true             # Contrast-Limited Adaptive Histogram Equalization
+  # Note: input resizing is handled internally by YOLO (imgsz above)
+
+# Location labels used when a geographic tag is not available
+default_location: "未知区域"
