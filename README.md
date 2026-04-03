@@ -7,7 +7,7 @@
 ## 项目架构
 
 ```
-1️⃣ 数据采集层  →  2️⃣ 感知识别层（本模块）  →  3️⃣ 决策与生成层  →  4️⃣ 调度与优化层
+1️⃣ 数据采集层（无人机或手机）  →  2️⃣ 感知识别层（本模块）  →  3️⃣ 决策与生成层  →  4️⃣ 调度与优化层
 ```
 
 本仓库当前实现了 **感知识别层（Perception Layer）**，基于 YOLOv8 + OpenCV。
@@ -16,23 +16,23 @@
 
 ## 感知层功能
 
-| 功能 | 实现 |
-|------|------|
-| 目标检测 | YOLOv8（`ultralytics`） |
-| 图像预处理 | OpenCV：基础去噪（高斯模糊） |
-| 结构化输出 | JSON（类型、置信度、位置、严重程度、边界框） |
-| 可检测对象 | 路面裂缝、坑洞、管道泄漏、积水/漏水、设备损坏 |
-| 视频支持 | 逐帧检测，可配置采样间隔 |
-| 可视化 | 彩色边界框 + 标签叠加 |
+| 功能    | 实现                                                                        |
+|-------|---------------------------------------------------------------------------|
+| 目标检测  | YOLOv8（`ultralytics`）                                                     |
+| 图像预处理 | OpenCV：基础去噪（高斯模糊）                                                         |
+| 结构化输出 | JSON（类型、置信度、位置、严重程度、边界框）                                                  |
+| 可检测对象 | Crack、Manhole、Net、Pothole、Patch-Crack、Patch-Net、Patch-Pothole、other、Other |
+| 入口形态  | 单图片路径输入（`main.py`）                                                        |
+| 可视化   | 彩色边界框 + 标签叠加                                                              |
 
 ### 输出示例（JSON）
 
 ```json
 [
   {
-    "type": "pipe_leak",
+    "type": "裂缝",
     "confidence": 0.9200,
-    "location": "A区-3号楼",
+    "location": "未知区域",
     "severity": "high",
     "bounding_box": { "x1": 120.0, "y1": 80.0, "x2": 340.0, "y2": 200.0 }
   }
@@ -65,18 +65,21 @@
 │       ├── output.py           # 结构化 JSON 输出格式化
 │       └── visualization.py    # 边界框可视化
 ├── tests/
-│   └── test_perception.py      # 单元测试（25 个测试用例）
-├── main.py                     # CLI 入口
-└── requirements.txt
+│   ├── test_main_entry.py      # 主入口行为测试
+│   ├── test_perception.py      # 感知层核心测试
+│   ├── test_class_map_sync.py  # class_map 同步/校验测试
+│   └── ...
+└── main.py                     # CLI 入口
 ```
 
 ---
 
 ## 快速开始
 
-### 1. 安装依赖（推荐 `uv`）
+### 1. 安装依赖（Windows PowerShell）
 
-```bash
+```powershell
+Set-Location "C:\Users\24053\PycharmProjects\-AI-"
 uv sync
 ```
 
@@ -86,55 +89,54 @@ uv sync
 
 ```yaml
 model:
-  weights: "yolov8n.pt"          # 预训练或自定义权重路径
+  weights: "models/best.pt"      # 默认使用本地训练权重
   confidence_threshold: 0.4
   iou_threshold: 0.45
+  max_detections: 100
+  image_size: 640
 
 class_map:                       # YOLO 类别索引 → 损坏类型名称
-  0: "road_crack"
-  1: "pothole"
-  2: "pipe_leak"
-  3: "water_accumulation"
-  4: "equipment_damage"
+  0: Crack
+  1: Manhole
+  2: Net
+  3: Pothole
+  4: Patch-Crack
+  5: Patch-Net
+  6: Patch-Pothole
+  7: other
+  8: Other
+
+# 可选：从训练 data.yaml 自动校验 class_map（防止类别顺序错位）
+class_map_sync:
+  data_yaml: "D:/.../lumian"    # 可填 data.yaml 文件，或其所在目录
+  mode: "warn"                  # warn | strict | overwrite
 ```
 
 ### 3. 运行
 
-```bash
-# 检测单张图片
-uv run ai-inspect --image path/to/image.jpg --location "A区-3号楼"
-
-# 检测图片并保存可视化结果
-uv run ai-inspect --image path/to/image.jpg --location "A区-3号楼" \
-                 --save-viz output_annotated.jpg --output results.json
-
-# 检测视频（每30帧采样一次）
-uv run ai-inspect --video path/to/video.mp4 --location "B区" --frame-interval 15
+```powershell
+uv run ai-inspect "path/to/image.jpg"
 ```
+
+程序会：
+- 在终端打印检测 JSON 字符串
+- 同时把结果保存到 `outputs/<图片名>/`：
+  - `outputs/<图片名>/<图片名>.json`
+  - `outputs/<图片名>/<图片名>_annotated.jpg`
 
 ### 4. 在代码中使用
 
 ```python
-from perception import YOLODetector
-from perception.utils import detection_to_json, draw_detections
-import cv2
+from main import detect_image_json
 
-detector = YOLODetector("config/detection_config.yaml")
-
-# 检测图片
-detections = detector.detect_image("image.jpg", location="A区-3号楼")
-print(detection_to_json(detections))
-
-# 可视化
-img = cv2.imread("image.jpg")
-annotated = draw_detections(img, detections)
-cv2.imwrite("annotated.jpg", annotated)
+json_str = detect_image_json("image.jpg")
+print(json_str)
 ```
 
 如果你更习惯直接运行脚本，也可以使用：
 
-```bash
-uv run python main.py --image path/to/image.jpg --location "A区-3号楼"
+```powershell
+uv run python main.py "path/to/image.jpg"
 ```
 
 ---
@@ -143,17 +145,17 @@ uv run python main.py --image path/to/image.jpg --location "A区-3号楼"
 
 若需要针对校园场景进行微调，可参考 [Ultralytics YOLOv8 训练文档](https://docs.ultralytics.com/modes/train/)：
 
-```bash
+```powershell
 yolo detect train data=campus_damage.yaml model=yolov8n.pt epochs=100 imgsz=640
 ```
 
 训练完成后，将 `runs/detect/train/weights/best.pt` 的路径填入 `config/detection_config.yaml` 的 `model.weights` 字段。
-
+> 本项目已预设了 `best.pt` 作为默认权重，适合快速测试和小规模数据集微调。
 ---
 
 ## 运行测试
 
-```bash
+```powershell
 uv run pytest tests/ -v
 ```
 

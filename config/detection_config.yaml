@@ -1,38 +1,43 @@
-# Detection configuration for the YOLO-based perception layer
-
+# 检测模型配置
 model:
-  # 路径指向自定义训练的YOLO权重文件，或预训练的模型名称
-  # e.g. "yolov8n.pt", "yolov8s.pt", or an absolute path to fine-tuned weights
-  weights: "yolov8n.pt"
-  # 置信阈值：低于此分数的检测结果被舍弃
-  confidence_threshold: 0.4
-  # 非最大抑制的IoU阈值
+  # 自定义训练权重
+  weights: models/best.pt
+  # 置信阈值：低于该分数的检测会被过滤
+  confidence_threshold: 0.2
+  # 非极大值抑制 IoU 阈值
   iou_threshold: 0.45
-  # Maximum number of detections per image
+  # 单张图最大检测框数量
   max_detections: 100
-  # Input image size fed to the model (square)
+  # YOLO 推理输入尺寸
   image_size: 640
 
-# 将这些索引更新为与你自定义训练模型中的类排序相匹配.
+# 类别索引映射（必须与训练时 names 顺序一致）
 class_map:
-  0: "road_crack"
-  1: "pothole"
-  2: "pipe_leak"
-  3: "water_accumulation"
-  4: "equipment_damage"
+  0: Crack
+  1: Manhole
+  2: Net
+  3: Pothole
+  4: Patch-Crack
+  5: Patch-Net
+  6: Patch-Pothole
+  7: other
+  8: Other
 
-# Severity thresholds based on detection confidence score
+# 可选：启动时校验 class_map 与训练 data.yaml 是否一致
+class_map_sync:
+  data_yaml: D:/路面缺陷(路面裂缝、井盖、坑洼路面)数据集-YOLO项目格式/lumian
+  mode: warn
+
+# 严重程度阈值（基于 confidence）
 severity:
   high: 0.75
-  medium: 0.50
-  # confidence < medium → "low"
+  medium: 0.5
 
-# 预处理配置：现在只保留“去噪”这一项，其他参数保留兼容
+# 预处理配置
 preprocessing:
-  denoise: true           # 是否开启高斯去噪（推荐新手先保持开启）
-  edge_enhancement: false # 兼容旧配置，当前不再使用
-  clahe: true             # 兼容旧配置，当前不再使用
-  # 注意：图片缩放由 YOLO 内部自动处理（见 imgsz）
+  denoise: true
+  edge_enhancement: true
+  clahe: true
 
-# Location labels used when a geographic tag is not available
-default_location: "未知区域"
+# 未传入 location 时的默认位置标签
+default_location: 未知区域
