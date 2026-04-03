@@ -3,7 +3,7 @@ model:
   # 自定义训练权重
   weights: models/best.pt
   # 置信阈值：低于该分数的检测会被过滤
-  confidence_threshold: 0.2
+  confidence_threshold: 0.37
   # 非极大值抑制 IoU 阈值
   iou_threshold: 0.45
   # 单张图最大检测框数量
