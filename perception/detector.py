@@ -44,7 +44,13 @@ class YOLODetector:
     """
 
     def __init__(self, config_path: str | Path = "config/detection_config.yaml") -> None:
+        project_root = Path(__file__).resolve().parent.parent
         config_path = Path(config_path)
+        if not config_path.is_absolute():
+            project_candidate = project_root / config_path
+            if project_candidate.exists():
+                config_path = project_candidate
+
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
@@ -52,7 +58,18 @@ class YOLODetector:
             cfg = yaml.safe_load(fh)
 
         model_cfg = cfg.get("model", {})
-        self._weights: str = model_cfg.get("weights", "yolov8n.pt")
+        raw_weights = str(model_cfg.get("weights", "yolov8n.pt"))
+        weights_path = Path(raw_weights)
+        if not weights_path.is_absolute():
+            # 先按配置文件所在目录解析，再按项目根目录解析。
+            from_config = config_path.parent / weights_path
+            from_project = project_root / weights_path
+            if from_config.exists():
+                weights_path = from_config
+            elif from_project.exists():
+                weights_path = from_project
+
+        self._weights: str = str(weights_path) if weights_path.exists() else raw_weights
         self._conf_threshold: float = float(model_cfg.get("confidence_threshold", 0.4))
         self._iou_threshold: float = float(model_cfg.get("iou_threshold", 0.45))
         self._max_det: int = int(model_cfg.get("max_detections", 100))

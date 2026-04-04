@@ -22,7 +22,7 @@
 | 图像预处理 | OpenCV：基础去噪（高斯模糊）                                                         |
 | 结构化输出 | JSON（类型、置信度、位置、严重程度、边界框）                                                  |
 | 可检测对象 | Crack、Manhole、Net、Pothole、Patch-Crack、Patch-Net、Patch-Pothole、other、Other |
-| 入口形态  | 单图片路径输入（`main.py`）                                                        |
+| 入口形态  | 单路径输入（`main.py`）：图片/视频/流地址                                           |
 | 可视化   | 彩色边界框 + 标签叠加                                                              |
 
 ### 输出示例（JSON）
@@ -124,6 +124,23 @@ uv run ai-inspect "path/to/image.jpg"
   - `outputs/<图片名>/<图片名>.json`
   - `outputs/<图片名>/<图片名>_annotated.jpg`
 
+视频文件或流地址同样支持：
+
+```powershell
+uv run ai-inspect "path/to/video.mp4" --frame-interval 5 --location "A区-3号楼"
+```
+
+视频模式会保存到 `outputs/<视频名>/`：
+- `outputs/<视频名>/<视频名>.json`（按帧结果，包含 `frame_index` 和 `timestamp_ms`）
+- `outputs/<视频名>/<视频名>_annotated.mp4`
+
+也支持摄像头索引和RTSP/HTTP流：
+
+```powershell
+uv run ai-inspect 0
+uv run ai-inspect "rtsp://127.0.0.1:8554/live"
+```
+
 ### 4. 在代码中使用
 
 ```python
@@ -137,6 +154,7 @@ print(json_str)
 
 ```powershell
 uv run python main.py "path/to/image.jpg"
+uv run python main.py "path/to/video.mp4" --frame-interval 3
 ```
 
 ---
