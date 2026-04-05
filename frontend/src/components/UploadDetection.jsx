@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { Upload, Button, Form, Input, message, Card, Table, Tag, Tabs } from 'antd';
+import { Upload, Button, Form, Input, InputNumber, message, Card, Table, Tag, Tabs } from 'antd';
 import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import { writeToDB, getDescFromAI } from '../api';
 import './UploadDetection.css';
@@ -116,6 +116,13 @@ const UploadDetection = ({ onTaskAdded }) => {
       formData.append('file', file);
       if (values && values.location) {
          formData.append('location', values.location);
+      }
+      // 添加视频处理参数
+      if (values && values.max_frames) {
+         formData.append('max_frames', values.max_frames);
+      }
+      if (values && values.frame_interval) {
+         formData.append('frame_interval', values.frame_interval);
       }
       await runDetection(formData, onSuccess);
     } catch (e) {
@@ -334,6 +341,13 @@ const UploadDetection = ({ onTaskAdded }) => {
               >
                 <Input placeholder="例如：A区" size="large" />
               </Form.Item>
+              <Form.Item
+                name="max_frames"
+                label="最大处理帧数"
+                tooltip="视频帧数过多时自动截断，建议100-500"
+              >
+                <InputNumber min={10} max={1000} defaultValue={200} style={{ width: '100%' }} />
+              </Form.Item>
               <Form.Item label="选择检测图片 / 视频">
                 <Upload.Dragger
                   customRequest={customRequest}
@@ -349,7 +363,7 @@ const UploadDetection = ({ onTaskAdded }) => {
                   <p className="ant-upload-text">点击或拖拽文件到此区域上传并检测</p>
                   <p className="ant-upload-hint">支持 jpg, png, mp4 等常见格式</p>
                 </Upload.Dragger>
-                {detecting && <div className="detect-spin">🚀 AI 模型正在飞速推理中，请稍候...</div>}
+                {detecting && <div className="detect-spin">🚀 YOLO 模型正在飞速推理中，请稍候...</div>}
               </Form.Item>
             </Form>
           </div>

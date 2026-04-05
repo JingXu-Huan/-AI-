@@ -1,22 +1,58 @@
-﻿import { defineConfig } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import formidable from 'formidable'
+
 function pythonDetectionPlugin() {
   return {
     name: 'python-detection-plugin',
     configureServer(server) {
-      // 暴露一个新路由用来读取本地的图片
+      // 暴露一个新路由用来读取本地的图片/视频/帧
       server.middlewares.use('/api/image', (req, res, next) => {
         try {
           const urlObj = new URL(req.url, 'http://localhost');
           const stem = urlObj.searchParams.get('stem');
           if (stem) {
              const projectRoot = path.resolve(fs.realpathSync('.'), '..');
+             
+             // 1. 优先检查 frames 目录（有标记的帧）
+             const framesDir = path.join(projectRoot, 'outputs', stem, 'frames');
+             if (fs.existsSync(framesDir) && fs.statSync(framesDir).isDirectory()) {
+                const frameIndex = urlObj.searchParams.get('frame');
+                let framePath;
+                if (frameIndex) {
+                   framePath = path.join(framesDir, 'frame_' + frameIndex.padStart(5, '0') + '.jpg');
+                } else {
+                   const files = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
+                   if (files.length > 0) {
+                      framePath = path.join(framesDir, files[0]);
+                   }
+                }
+                if (framePath && fs.existsSync(framePath)) {
+                   res.setHeader('Content-Type', 'image/jpeg');
+                   fs.createReadStream(framePath).pipe(res);
+                   return;
+                }
+             }
+             
+             // 2. 检查普通标注图片
              const imgPath = path.join(projectRoot, 'outputs', stem, stem + '_annotated.jpg');
-             const videoPath = path.join(projectRoot, 'outputs', stem, stem + '_annotated.mp4');
+             if (fs.existsSync(imgPath)) {
+               res.setHeader('Content-Type', 'image/jpeg');
+               fs.createReadStream(imgPath).pipe(res);
+               return;
+             }
+             
+             // 3. 检查视频 (AVI 或 MP4)
+             let videoPath = path.join(projectRoot, 'outputs', stem, stem + '_annotated.mp4');
+             let videoType = 'video/mp4';
+             if (!fs.existsSync(videoPath)) {
+               videoPath = path.join(projectRoot, 'outputs', stem, stem + '_annotated.avi');
+               videoType = 'video/x-msvideo';
+             }
+             
              if (fs.existsSync(videoPath)) {
                const stat = fs.statSync(videoPath);
                const fileSize = stat.size;
@@ -26,37 +62,29 @@ function pythonDetectionPlugin() {
                  const parts = range.replace(/bytes=/, "").split("-");
                  const start = parseInt(parts[0], 10);
                  const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
                  if (start >= fileSize) {
-                   res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+                   res.writeHead(416);
                    return res.end();
                  }
-
                  const chunksize = (end - start) + 1;
                  const fileStream = fs.createReadStream(videoPath, { start, end });
                  res.writeHead(206, {
                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                    'Accept-Ranges': 'bytes',
                    'Content-Length': chunksize,
-                   'Content-Type': 'video/mp4',
+                   'Content-Type': videoType,
                  });
                  fileStream.pipe(res);
                } else {
                  res.writeHead(200, {
-                   'Content-Length': fileSize,
-                   'Content-Type': 'video/mp4',
+                   'Content-Type': videoType,
                  });
                  fs.createReadStream(videoPath).pipe(res);
                }
                return;
              }
-             if (fs.existsSync(imgPath)) {
-               res.setHeader('Content-Type', 'image/jpeg');
-               fs.createReadStream(imgPath).pipe(res);
-               return;
-             }
           }
-        } catch(e) {}
+        } catch(e) { console.error('API image error:', e); }
         next();
       });
 
@@ -77,14 +105,14 @@ function pythonDetectionPlugin() {
             'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'Pragma': 'no-cache'
           });
 
           const projectRoot = path.resolve(fs.realpathSync('.'), '..');
-          const pythonExe = path.join(projectRoot, '.venv', 'Scripts', 'python.exe');
+          const pythonExe = process.platform === 'win32' 
+            ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+            : path.join(projectRoot, '.venv', 'bin', 'python');
           
           liveProcess = spawn(pythonExe, ['main.py', source, '--location', location, '--mjpeg'], { cwd: projectRoot });
-          
           liveProcess.stdout.pipe(res);
           
           req.on('close', () => {
@@ -121,7 +149,6 @@ function pythonDetectionPlugin() {
 
       server.middlewares.use('/api/detect', (req, res, next) => {
         if (req.method === 'POST') {
-          // Increase maxFileSize for video uploads (e.g. 2GB)
           const form = formidable({ multiples: false, keepExtensions: true, maxFileSize: 2 * 1024 * 1024 * 1024 });
           form.parse(req, (err, fields, files) => {
             if (err) {
@@ -165,28 +192,21 @@ function pythonDetectionPlugin() {
                maxFramesArgs = ['--max-frames', mf];
             }
             
-            const pythonExe = path.join(projectRoot, '.venv', 'Scripts', 'python.exe');
+            const pythonExe = process.platform === 'win32' 
+              ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+              : path.join(projectRoot, '.venv', 'bin', 'python');
             const sourceArg = streamUrl ? streamUrl : targetPath;
-            console.log('Running Python detection on:', sourceArg);
 
-            // 增加 --frame-interval 5 防止视频逐帧检测导致处理时间过长/假死
             const child = spawn(pythonExe, ['main.py', sourceArg, '--location', location, '--frame-interval', '5', ...maxFramesArgs], { cwd: projectRoot });
             let stderrData = '';
 
-            // Listen to stdout but don't accumulate it in memory to avoid hanging on large prints
-            child.stdout.on('data', (data) => {
-               // We can just ignore stdout since we read the JSON output from the generated file.
-            });
-
+            child.stdout.on('data', (data) => {});
             child.stderr.on('data', (data) => {
-               const str = data.toString();
-               console.log('[Python Debug]:', str.trim());
-               stderrData += str;
+               stderrData += data.toString();
             });
 
             child.on('error', (execErr) => {
                if (targetPath) { try { fs.unlinkSync(targetPath); } catch(e) {} }
-               console.error('Python spawn error: ' + execErr);
                res.writeHead(500, { 'Content-Type': 'application/json' });
                return res.end(JSON.stringify({ error: 'Detection failed', details: execErr.message }));
             });
@@ -220,6 +240,7 @@ function pythonDetectionPlugin() {
     }
   }
 }
+
 export default defineConfig({
   server: {
     proxy: {

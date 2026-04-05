@@ -120,7 +120,7 @@ def _video_output_paths(source: str) -> tuple[Path, Path, Path]:
     return (
         output_dir,
         output_dir / f"{name}.json",
-        output_dir / f"{name}_annotated.mp4",
+        output_dir / f"{name}_annotated",  # 不带扩展名，由实际生成决定
     )
 
 
@@ -209,9 +209,10 @@ def _detect_video_json(
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
 
     writer: cv2.VideoWriter | None = None
-    if width > 0 and height > 0:
-        fourcc = cv2.VideoWriter_fourcc(*"avc1")
-        writer = cv2.VideoWriter(str(viz_path), fourcc, fps, (width, height))
+    save_frame_images = True  # 保存关键帧图片供前端查看
+    frame_images_dir = output_dir / "frames"
+    if save_frame_images:
+        frame_images_dir.mkdir(parents=True, exist_ok=True)
 
     records: list[dict[str, Any]] = []
     frame_idx = 0
@@ -235,22 +236,40 @@ def _detect_video_json(
                         "detections": last_detections,
                     }
                 )
+                # 保存关键帧图片 (有检测结果的帧)
+                if save_frame_images:
+                    has_detection = last_detections and len(last_detections) > 0
+                    if has_detection:
+                        frame_path = frame_images_dir / f"frame_{frame_idx:05d}.jpg"
+                        cv2.imwrite(str(frame_path), draw_detections(frame, last_detections))
 
-            if writer is not None:
+            if writer is not None and writer.isOpened():
                 writer.write(draw_detections(frame, last_detections))
 
             frame_idx += 1
     finally:
         cap.release()
-        if writer is not None:
+        if writer is not None and writer.isOpened():
             writer.release()
 
     json_str = json.dumps(records, ensure_ascii=False, indent=2)
     json_path.write_text(json_str, encoding="utf-8")
-    if writer is not None:
+    
+    # 保存带检测标记的帧数量
+    frame_count = len(list(frame_images_dir.glob("frame_*.jpg"))) if save_frame_images else 0
+    
+    # 保存一个摘要文件说明有多少帧图片可用
+    if frame_count > 0:
+        summary = {"total_frames": frame_idx, "detected_frames": frame_count}
+        (output_dir / "frames_summary.json").write_text(json.dumps(summary))
+        print(f"[INFO] Saved {frame_count} annotated frames", file=sys.stderr)
+    
+    if writer is not None and writer.isOpened():
         print(f"[INFO] Visualisation saved: {viz_path}", file=sys.stderr)
+    else:
+        viz_path = None  # 没有生成视频
     print(f"[INFO] JSON saved: {json_path}", file=sys.stderr)
-    return json_str, json_path
+    return json_str, json_path, viz_path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -278,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[ERROR] Video not found: {source_path}", file=sys.stderr)
             return 1
         try:
-            json_str, _ = _detect_video_json(
+            json_str, _, viz_path = _detect_video_json(
                 detector=detector,
                 source=source,
                 location=args.location,
