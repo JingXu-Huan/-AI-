@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Table, Button, Tag, Space, Modal, Select, message, Popconfirm } from 'antd';
-import { updateRepairStatus, deleteRepair, getDescFromAI } from '../api';
+import { updateRepairStatus, deleteRepair, analyze } from '../api';
 
 const { Option } = Select;
 
@@ -49,17 +49,88 @@ const RepairList = ({ repairs, loading, refreshTasks }) => {
     if (!selectedRepair) return;
     setIsReportLoading(true);
     try {
-      const result = await getDescFromAI({
-        type: selectedRepair.type,
-        location: selectedRepair.location,
-      });
-      setAiReport(result.data.data);
+      const aggregated = parseReportToDetectionResult(selectedRepair.report, selectedRepair.type);
+      aggregated.location = selectedRepair.location;
+      
+      const result = await analyze(aggregated);
+      // AiAnalysisResult is an object, convert to formatted string
+      const reportData = result.data.data;
+      const formatted = JSON.stringify(reportData, null, 2);
+      setAiReport(formatted);
     } catch (error) {
       console.error('生成报告失败:', error);
       message.error('生成AI报告失败');
     } finally {
       setIsReportLoading(false);
     }
+  };
+
+  // 解析 report 字符串为 DetectionResult 格式
+  const parseReportToDetectionResult = (report, type) => {
+    const result = {
+      meanConfidenceOfPothole: 0, meanConfidenceOfCrack: 0, meanConfidenceOfManhole: 0,
+      meanConfidenceOfPatchNet: 0, meanConfidenceOfPatchCrack: 0, meanConfidenceOfPatchPothole: 0,
+      lowPotholeCount: 0, lowCrackCount: 0, lowManholeCount: 0, lowPatchNetCount: 0, lowPatchCrackCount: 0, lowPatchPotholeCount: 0,
+      mediumPotholeCount: 0, mediumCrackCount: 0, mediumManholeCount: 0, mediumPatchNetCount: 0, mediumPatchCrackCount: 0, mediumPatchPotholeCount: 0,
+      highPotholeCount: 0, highCrackCount: 0, highManholeCount: 0, highPatchNetCount: 0, highPatchCrackCount: 0, highPatchPotholeCount: 0,
+    };
+    
+    if (!report) return result;
+    
+    // 解析总数:52, 高:7, 中:29, 低:16
+    const totalMatch = report.match(/总数:(\d+)/);
+    const highMatch = report.match(/高:(\d+)/);
+    const mediumMatch = report.match(/中:(\d+)/);
+    const lowMatch = report.match(/低:(\d+)/);
+    
+    // 解析平均置信度
+    const confMatches = report.match(/([A-Za-z]+)=([\d.]+)/g);
+    if (confMatches) {
+      confMatches.forEach(m => {
+        const match = m.match(/([A-Za-z]+)=([\d.]+)/);
+        if (match) {
+          const [, typeName, conf] = match;
+          const key = 'meanConfidenceOf' + typeName.charAt(0).toUpperCase() + typeName.slice(1).toLowerCase();
+          if (result.hasOwnProperty(key)) {
+            result[key] = parseFloat(conf);
+          }
+        }
+      });
+    }
+    
+    // 根据损坏类型设置对应计数
+    const total = totalMatch ? parseInt(totalMatch[1]) : 0;
+    const high = highMatch ? parseInt(highMatch[1]) : 0;
+    const medium = mediumMatch ? parseInt(mediumMatch[1]) : 0;
+    const low = lowMatch ? parseInt(lowMatch[1]) : 0;
+    
+    if (type && type.includes('Crack')) {
+      result.highCrackCount = high;
+      result.mediumCrackCount = medium;
+      result.lowCrackCount = low;
+    } else if (type && type.includes('Pothole')) {
+      result.highPotholeCount = high;
+      result.mediumPotholeCount = medium;
+      result.lowPotholeCount = low;
+    } else if (type && type.includes('Manhole')) {
+      result.highManholeCount = high;
+      result.mediumManholeCount = medium;
+      result.lowManholeCount = low;
+    } else if (type && type.includes('PatchNet')) {
+      result.highPatchNetCount = high;
+      result.mediumPatchNetCount = medium;
+      result.lowPatchNetCount = low;
+    } else if (type && type.includes('PatchCrack')) {
+      result.highPatchCrackCount = high;
+      result.mediumPatchCrackCount = medium;
+      result.lowPatchCrackCount = low;
+    } else if (type && type.includes('PatchPothole')) {
+      result.highPatchPotholeCount = high;
+      result.mediumPatchPotholeCount = medium;
+      result.lowPatchPotholeCount = low;
+    }
+    
+    return result;
   };
 
   const columns = [

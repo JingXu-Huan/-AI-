@@ -267,7 +267,7 @@ function pythonDetectionPlugin() {
 export default defineConfig({
   server: {
     proxy: {
-      '^/api/(getDesc|writeToDB|repairs).*': {
+      '^/api/(getDesc|writeToDB|repairs|analyze).*': {
         target: 'http://localhost:8080',
         changeOrigin: true
       }

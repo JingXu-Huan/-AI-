@@ -1,8 +1,53 @@
-﻿import React, { useState } from 'react';
-import { Upload, Button, Form, Input, InputNumber, message, Card, Table, Tag, Tabs } from 'antd';
-import { UploadOutlined, SendOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
-import { writeToDB, getDescFromAI } from '../api';
+import React, { useState, useMemo } from 'react';
+import { Upload, Button, Form, Input, InputNumber, message, Card, Tag, Tabs, Collapse, Row, Col, Statistic } from 'antd';
+import { UploadOutlined, SendOutlined, LeftOutlined, RightOutlined, EnvironmentOutlined } from '@ant-design/icons';
+import { writeToDB, analyze } from '../api';
 import './UploadDetection.css';
+
+// 聚合检测结果为 DetectionResult 格式
+const aggregateResults = (detections) => {
+  const result = {
+    meanConfidenceOfPothole: 0, meanConfidenceOfCrack: 0, meanConfidenceOfManhole: 0,
+    meanConfidenceOfPatchNet: 0, meanConfidenceOfPatchCrack: 0, meanConfidenceOfPatchPothole: 0,
+    lowPotholeCount: 0, lowCrackCount: 0, lowManholeCount: 0, lowPatchNetCount: 0, lowPatchCrackCount: 0, lowPatchPotholeCount: 0,
+    mediumPotholeCount: 0, mediumCrackCount: 0, mediumManholeCount: 0, mediumPatchNetCount: 0, mediumPatchCrackCount: 0, mediumPatchPotholeCount: 0,
+    highPotholeCount: 0, highCrackCount: 0, highManholeCount: 0, highPatchNetCount: 0, highPatchCrackCount: 0, highPatchPotholeCount: 0,
+  };
+  
+  const typeMap = { 
+    'Pothole': 'Pothole', 'Crack': 'Crack', 'Manhole': 'Manhole', 
+    'PatchNet': 'PatchNet', 'PatchCrack': 'PatchCrack', 'PatchPothole': 'PatchPothole',
+    'Net': 'PatchNet', 'Patch-Crack': 'PatchCrack', 'Patch-Pothole': 'PatchPothole'
+  };
+  const severityMap = { 'low': 'low', 'medium': 'medium', 'high': 'high', 'LOW': 'low', 'MEDIUM': 'medium', 'HIGH': 'high' };
+  
+  let counts = { Pothole: { low: 0, medium: 0, high: 0, conf: 0 },
+                 Crack: { low: 0, medium: 0, high: 0, conf: 0 },
+                 Manhole: { low: 0, medium: 0, high: 0, conf: 0 },
+                 PatchNet: { low: 0, medium: 0, high: 0, conf: 0 },
+                 PatchCrack: { low: 0, medium: 0, high: 0, conf: 0 },
+                 PatchPothole: { low: 0, medium: 0, high: 0, conf: 0 } };
+  
+  detections.forEach(det => {
+    const type = typeMap[det.type] || det.type;
+    const severity = severityMap[det.severity?.toUpperCase()] || 'low';
+    if (counts[type]) {
+      counts[type][severity]++;
+      counts[type].conf += det.confidence || 0;
+    }
+  });
+  
+  Object.keys(counts).forEach(type => {
+    const total = counts[type].low + counts[type].medium + counts[type].high;
+    const avgConf = total > 0 ? counts[type].conf / total : 0;
+    result[`meanConfidenceOf${type}`] = avgConf;
+    result[`low${type}Count`] = counts[type].low;
+    result[`medium${type}Count`] = counts[type].medium;
+    result[`high${type}Count`] = counts[type].high;
+  });
+  
+  return result;
+};
 
 const UploadDetection = ({ onTaskAdded }) => {
   const [form] = Form.useForm();
@@ -18,104 +63,84 @@ const UploadDetection = ({ onTaskAdded }) => {
   const [isVideo, setIsVideo] = useState(false);
   const [frameList, setFrameList] = useState([]);
   const [currentFrame, setCurrentFrame] = useState(0);
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [fetchingAI, setFetchingAI] = useState({});
   const [activeTab, setActiveTab] = useState('file');
+  const [aiReports, setAiReports] = useState({});
+
+  // 按区域分组
+  const groupedResults = useMemo(() => {
+    const groups = {};
+    detectionResults.forEach(det => {
+      const loc = det.location || '未知区域';
+      if (!groups[loc]) groups[loc] = [];
+      groups[loc].push(det);
+    });
+    return groups;
+  }, [detectionResults]);
 
   const runDetection = async (formData, onSuccess) => {
     setDetecting(true);
     setDetectionResults([]);
     setRawDetections(null);
-    setSelectedRowKeys([]);
+    setAiReports({});
     setImgUrl(null);
     setIsVideo(false);
 
     try {
-      const response = await fetch('/api/detect', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText);
-      }
+      const response = await fetch('/api/detect', { method: 'POST', body: formData });
+      if (!response.ok) throw new Error(await response.text());
       const result = await response.json();
-      if (result.error) {
-          throw new Error(result.error);
-      }
+      if (result.error) throw new Error(result.error);
+      
       let detections = result.data;
       setRawDetections(detections);
-      const isInvalid = !detections || !Array.isArray(detections) || detections.length === 0;
-      if (isInvalid) {
-          message.warning('检测完成，但未发现损伤目标或无数据返回！');
-          if (onSuccess) onSuccess({}, null);
-          setDetecting(false);
-          return;
+      if (!detections || !Array.isArray(detections) || detections.length === 0) {
+        message.warning('检测完成，但未发现损伤目标！');
+        setDetecting(false);
+        return;
       }
+      
       const isVideoOutput = detections[0].frame_index !== undefined;
       setIsVideo(isVideoOutput);
       if (isVideoOutput) {
-         let allDets = [];
-         for(let i=0; i<detections.length; i++) {
-            if (detections[i].detections) {
-                allDets = allDets.concat(detections[i].detections);
-            }
-         }
-         detections = allDets;
+        let allDets = [];
+        detections.forEach(d => { if (d.detections) allDets = allDets.concat(d.detections); });
+        detections = allDets;
       }
+      
       if (detections.length === 0) {
-          message.warning('检测完成，但未发现损伤目标！');
-          if (onSuccess) onSuccess({}, null);
-          setDetecting(false);
-          return;
+        message.warning('检测完成，但未发现损伤目标！');
+        setDetecting(false);
+        return;
       }
+      
       message.success('AI 检测成功！发现了 ' + detections.length + ' 个目标。');
+      
       const formattedResults = [];
       let loc = formData.get('location') || '未知区域';
-      for (let i = 0; i < detections.length; i++) {
-        const det = detections[i];
-        let typeName = 'Unknown';
-        if (det.type) typeName = det.type;
-        else if (det.class_name) typeName = det.class_name;
-        let severityValue = 'low';
-        if (det.severity) severityValue = det.severity;
-        let bboxStr = 'N/A';
-        if (det.bounding_box) {
-           bboxStr = '[' + det.bounding_box.x1 + ', ' + det.bounding_box.y1 + ', ' + det.bounding_box.x2 + ', ' + det.bounding_box.y2 + ']';
-        }
-        const itemLoc = det.location || loc;
+      detections.forEach((det, i) => {
         formattedResults.push({
           key: i,
-          type: typeName,
+          type: det.type || det.class_name || 'Unknown',
           confidence: det.confidence,
-          location: itemLoc,
-          severity: severityValue,
-          bbox: bboxStr,
-          report: null
+          location: det.location || loc,
+          severity: (det.severity || 'low').toLowerCase(),
+          bbox: det.bounding_box ? `[${det.bounding_box.x1}, ${det.bounding_box.y1}, ${det.bounding_box.x2}, ${det.bounding_box.y2}]` : 'N/A',
         });
-      }
+      });
+      
       setDetectionResults(formattedResults);
-      setSelectedRowKeys(formattedResults.map(item => item.key));
       if (result.stem) {
         setImgUrl('/api/image?stem=' + encodeURIComponent(result.stem));
-        // 获取视频检测的帧列表
         if (isVideoOutput) {
           try {
             const res = await fetch('/api/frames?stem=' + encodeURIComponent(result.stem));
             const data = await res.json();
-            if (data.frames && data.frames.length > 0) {
-              setFrameList(data.frames);
-              setCurrentFrame(0);
-            }
-          } catch (e) {
-            console.error('获取帧列表失败:', e);
-          }
+            if (data.frames?.length > 0) { setFrameList(data.frames); setCurrentFrame(0); }
+          } catch (e) { console.error('获取帧列表失败:', e); }
         }
       }
-      message.success('检测分析完成！');
-      if (onSuccess) onSuccess(result, null);
     } catch (error) {
-      console.error(error);
       message.error('检测失败: ' + error.message);
     } finally {
       setDetecting(false);
@@ -127,415 +152,269 @@ const UploadDetection = ({ onTaskAdded }) => {
     try {
       const values = await form.validateFields();
       formData.append('file', file);
-      if (values && values.location) {
-         formData.append('location', values.location);
-      }
-      // 添加视频处理参数
-      if (values && values.max_frames) {
-         formData.append('max_frames', values.max_frames);
-      }
-      if (values && values.frame_interval) {
-         formData.append('frame_interval', values.frame_interval);
-      }
+      if (values?.location) formData.append('location', values.location);
+      if (values?.max_frames) formData.append('max_frames', values.max_frames);
       await runDetection(formData, onSuccess);
-    } catch (e) {
-      onError(e);
-    }
+    } catch (e) { onError(e); }
   };
 
   const handleLiveStart = async (values) => {
-    setDetecting(true);
-    setIsLive(true);
-    setDetectionResults([]);
-    setRawDetections(null);
-    setImgUrl(null);
-    const url = `/api/stream_live?source=${encodeURIComponent(values.stream_url)}&location=${encodeURIComponent(values.location)}`;
-    setLiveStreamUrl(url);
+    setDetecting(true); setIsLive(true); setDetectionResults([]); setRawDetections(null); setAiReports({}); setImgUrl(null);
+    setLiveStreamUrl(`/api/stream_live?source=${encodeURIComponent(values.stream_url)}&location=${encodeURIComponent(values.location)}`);
   };
 
   const handleLiveStop = async () => {
-    setDetecting(false);
-    setIsLive(false);
-    setLiveStreamUrl(null);
-    
+    setDetecting(false); setIsLive(false); setLiveStreamUrl(null);
     try {
       const res = await fetch('/api/stream_stop');
       const result = await res.json();
       let detections = result.data || [];
-      setRawDetections(detections);
-      
       let allDets = [];
-      for (let i = 0; i < detections.length; i++) {
-        if (detections[i].detections) {
-          allDets = allDets.concat(detections[i].detections);
-        }
-      }
+      detections.forEach(d => { if (d.detections) allDets = allDets.concat(d.detections); });
       detections = allDets;
-
-      const formattedResults = [];
-      for (let i = 0; i < detections.length; i++) {
-        const det = detections[i];
-        let typeName = 'Unknown';
-        if (det.type) typeName = det.type;
-        else if (det.class_name) typeName = det.class_name;
-        
-        formattedResults.push({
-          key: i,
-          type: typeName,
-          confidence: det.confidence,
-          location: det.location || '大门主干道',
-          severity: det.severity || 'low',
-          bbox: det.bounding_box ? `[${det.bounding_box.x1}, ${det.bounding_box.y1}, ${det.bounding_box.x2}, ${det.bounding_box.y2}]` : 'N/A',
-          report: null
-        });
-      }
+      
+      const formattedResults = detections.map((det, i) => ({
+        key: i,
+        type: det.type || det.class_name || 'Unknown',
+        confidence: det.confidence,
+        location: det.location || '大门主干道',
+        severity: (det.severity || 'low').toLowerCase(),
+        bbox: det.bounding_box ? `[${det.bounding_box.x1}, ${det.bounding_box.y1}, ${det.bounding_box.x2}, ${det.bounding_box.y2}]` : 'N/A',
+      }));
       setDetectionResults(formattedResults);
-      setSelectedRowKeys(formattedResults.map(item => item.key));
       message.success(`流检测结束，共捕获 ${formattedResults.length} 个受损记录！`);
-    } catch(e) {
-      console.error('Stop error:', e);
-    }
+    } catch(e) { console.error('Stop error:', e); }
   };
 
-  const handleFetchAI = async (recordKey) => {
-    const item = detectionResults.find(r => r.key === recordKey);
-    if (!item) return;
-
-    setFetchingAI(prev => ({ ...prev, [recordKey]: true }));
+  // 按区域生成AI建议
+  const handleFetchAIByLocation = async (location) => {
+    setFetchingAI(prev => ({ ...prev, [location]: true }));
     try {
-      const aiResponse = await getDescFromAI({ type: item.type, location: item.location });
-      const aiReport = aiResponse.data.data || '无报告内容';
-      setDetectionResults(prev => prev.map(r => r.key === recordKey ? { ...r, report: aiReport } : r));
-      message.success('AI 维修建议已生成！');
-    } catch (e) {
-      console.error('获取AI描述失败', e);
-      message.error('生成报告失败');
-    } finally {
-      setFetchingAI(prev => ({ ...prev, [recordKey]: false }));
-    }
+      const items = groupedResults[location] || [];
+      const aggregated = aggregateResults(items);
+      aggregated.location = location;
+      const aiResponse = await analyze(aggregated);
+      setAiReports(prev => ({ ...prev, [location]: aiResponse.data.data || {} }));
+      message.success(`区域 "${location}" AI 维修建议已生成！`);
+    } catch (e) { message.error('生成报告失败'); } 
+    finally { setFetchingAI(prev => ({ ...prev, [location]: false })); }
   };
 
-  const handleFetchAllAI = async () => {
-     const toFetch = detectionResults.filter(item => selectedRowKeys.includes(item.key) && !item.report);
-     if(toFetch.length === 0) {
-        message.warning('选中的项目已生成或没有选中任何项。');
-        return;
-     }
-     for(const item of toFetch) {
-         await handleFetchAI(item.key);
-     }
-  };
-
-  const onSelectChange = (newSelectedRowKeys) => {
-    setSelectedRowKeys(newSelectedRowKeys);
-  };
-
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: onSelectChange,
-  };
-
-  const executePush = async (itemsToPush) => {
-    if (itemsToPush.length === 0) {
-      message.warning('没有可推送的项！');
-      return;
-    }
+  // 按区域推送
+  const handlePushByLocation = async (location) => {
+    const items = groupedResults[location] || [];
+    if (!items.length) return;
     setSubmitting(true);
     try {
-      for (let i = 0; i < itemsToPush.length; i++) {
-        const item = itemsToPush[i];
-        const payload = {
-           type: item.type,
-           location: item.location,
-           report: item.report,
-           severity: item.severity
-        };
-        await writeToDB(payload);
-      }
-      message.success(`成功推送 ${itemsToPush.length} 个检测结果至系统后端！`);
-
-      const remainingResults = detectionResults.filter(r => !itemsToPush.includes(r));
-      setDetectionResults(remainingResults);
-      setSelectedRowKeys(selectedRowKeys.filter(key => remainingResults.some(r => r.key === key)));
-
-      if (remainingResults.length === 0) {
-          setFileList([]);
-          setImgUrl(null);
-      }
-
-      if (onTaskAdded) {
-         onTaskAdded();
-      }
-    } catch (error) {
-      console.error(error);
-      message.error('推送数据库失败');
-    } finally {
-      setSubmitting(false);
-    }
+      const aggregated = aggregateResults(items);
+      aggregated.location = location;
+      await writeToDB(aggregated);
+      message.success(`区域 "${location}" 检测结果已推送！`);
+      setDetectionResults(prev => prev.filter(r => r.location !== location));
+      setAiReports(prev => { const n = {...prev}; delete n[location]; return n; });
+      if (onTaskAdded) onTaskAdded();
+    } catch (e) { message.error('推送数据库失败'); }
+    finally { setSubmitting(false); }
   };
 
-  const handlePushSelected = () => {
-    const itemsToPush = detectionResults.filter(item => selectedRowKeys.includes(item.key));
-    executePush(itemsToPush);
+  // 推送所有区域
+  const handlePushAll = async () => {
+    const locations = Object.keys(groupedResults);
+    if (!locations.length) return;
+    setSubmitting(true);
+    try {
+      for (const location of locations) {
+        const items = groupedResults[location] || [];
+        const aggregated = aggregateResults(items);
+        aggregated.location = location;
+        await writeToDB(aggregated);
+      }
+      message.success(`已推送 ${locations.length} 个区域的检测结果！`);
+      setDetectionResults([]); setAiReports({}); setImgUrl(null);
+      if (onTaskAdded) onTaskAdded();
+    } catch (e) { message.error('推送数据库失败'); }
+    finally { setSubmitting(false); }
   };
 
-  const handlePushHigh = () => {
-    const itemsToPush = detectionResults.filter(item => item.severity && item.severity.toLowerCase() === 'high');
-    executePush(itemsToPush);
+  // 为所有区域生成AI建议
+  const handleFetchAllAI = async () => {
+    const locations = Object.keys(groupedResults);
+    if (!locations.length) return;
+    setFetchingAI(prev => { const p = {}; locations.forEach(l => p[l] = true); return { ...prev, ...p }; });
+    try {
+      for (const location of locations) {
+        const items = groupedResults[location] || [];
+        const aggregated = aggregateResults(items);
+        aggregated.location = location;
+        const aiResponse = await analyze(aggregated);
+        setAiReports(prev => ({ ...prev, [location]: aiResponse.data.data || {} }));
+      }
+      message.success('所有区域 AI 维修建议已生成！');
+    } catch (e) { message.error('生成报告失败'); }
+    finally { setFetchingAI({}); }
   };
 
-  const columns = [
-    { title: '类型', dataIndex: 'type', key: 'type' },
-    { title: '置信度', dataIndex: 'confidence', key: 'confidence' },
-    { 
-      title: '严重程度', 
-      dataIndex: 'severity', 
-      key: 'severity',
-      render: (severity) => {
-        let color = 'green';
-        if (severity === 'high') color = 'red';
-        if (severity === 'medium') color = 'orange';
-        let displayStr = '';
-        if (severity) displayStr = severity.toUpperCase();
-        return <Tag color={color}>{displayStr}</Tag>;
+  const renderReport = (report) => {
+    if (!report) return null;
+    try {
+      let strReport = typeof report === 'string' ? report.replace(/```json\s*/, '').replace(/```\s*$/, '').trim() : report;
+      const parsed = typeof strReport === 'string' ? JSON.parse(strReport) : strReport;
+      if (parsed && typeof parsed === 'object') {
+        return (
+          <div style={{ fontSize: '13px', lineHeight: '1.6' }}>
+            <div style={{ marginBottom: '8px' }}>
+              <Tag color="blue">{parsed.problemType || '未知问题'}</Tag>
+              <Tag color={parsed.priority === '高' ? 'red' : parsed.priority === '中' ? 'orange' : 'green'}>{parsed.priority || '未知'}</Tag>
+            </div>
+            <div><strong>🛠️ 原因:</strong> <span style={{ color: '#666' }}>{parsed.cause || '未知'}</span></div>
+            <div><strong>✅ 方案:</strong> <span style={{ color: '#666' }}>{parsed.repairPlan || '未知'}</span></div>
+            <div><strong>⏱️ 工期:</strong> <span style={{ color: '#666' }}>{parsed.estimatedTime || '未知'}</span></div>
+          </div>
+        );
       }
-    },
-    { title: '位置', dataIndex: 'location', key: 'location' },
-    {
-      title: 'AI 维修建议',
-      dataIndex: 'report',
-      key: 'report',
-      render: (report, record) => {
-        if (!report) {
-           return <Button size="small" type="primary" ghost onClick={() => handleFetchAI(record.key)} loading={fetchingAI[record.key]}>自动生成方案</Button>;
-        }
-        try {
-          let strReport = report;
-          if (typeof strReport === 'string') {
-            // Remove markdown code blocks if any
-            strReport = strReport.replace(/```json\s*/, '').replace(/```\s*$/, '').trim();
-          }
-          const parsed = typeof strReport === 'string' ? JSON.parse(strReport) : strReport;
-          if (parsed && typeof parsed === 'object') {
-            return (
-              <div style={{ fontSize: '13px', lineHeight: '1.6' }}>
-                <div style={{ marginBottom: '4px' }}>
-                  <Tag color="blue">{parsed.problemType || '未知问题'}</Tag>
-                  <Tag color={parsed.priority === '高' ? 'red' : parsed.priority === '中' ? 'orange' : 'green'}>{parsed.priority || '未知'}</Tag>
-                </div>
-                <div style={{ marginBottom: '4px' }}><strong>🛠️ 原因分析:</strong> <span style={{ color: '#666' }}>{parsed.cause || '未知'}</span></div>
-                <div style={{ marginBottom: '4px' }}><strong>✅ 维修方案:</strong> <span style={{ color: '#666' }}>{parsed.repairPlan || '未知'}</span></div>
-                <div><strong>⏱️ 预计工期:</strong> <span style={{ color: '#666', marginRight: '16px' }}>{parsed.estimatedTime || '未知'}</span></div>
-              </div>
-            );
-          }
-        } catch (e) {
-          // ignore, fallback to string
-        }
-        return <div style={{ fontSize: '12px', whiteSpace: 'pre-wrap' }}>{typeof report === 'string' ? report.replace(/```json\s*/, '').replace(/```\s*$/, '').trim() : report}</div>;
-      }
-    },
-  ];
+    } catch (e) {}
+    return <div style={{ fontSize: '12px' }}>{typeof report === 'string' ? report : JSON.stringify(report)}</div>;
+  };
 
   return (
-    <Card className="detect-card" bordered={false} title={<span className="detect-title">📸 AI 智能实机检测</span>}>
-      <Tabs activeKey={activeTab} onChange={setActiveTab} centered className="detect-tabs">
+    <Card className="detect-card" bordered={false} title={
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="detect-title">📸 AI 智能实机检测</span>
+        {detectionResults.length > 0 && !isLive && (
+          <Button type="primary" onClick={() => { setDetectionResults([]); setImgUrl(null); setRawDetections(null); setAiReports({}); }}>
+            🔙 返回
+          </Button>
+        )}
+      </div>
+    }>
+      {!(detectionResults.length > 0 && !isLive) && (
+      <Tabs activeKey={activeTab} onChange={setActiveTab} centered>
         <Tabs.TabPane tab="📁 本地文件上传" key="file">
-          <div className="tab-content-wrapper">
-            <Form
-              form={form}
-              layout="vertical"
-              initialValues={{ location: 'A区-3号楼' }}
-            >
-              <Form.Item
-                name="location"
-                label="预设位置标签"
-                rules={[{ required: true, message: '请输入发生位置' }]}
-              >
-                <Input placeholder="例如：A区" size="large" />
-              </Form.Item>
-              <Form.Item
-                name="max_frames"
-                label="最大处理帧数"
-                tooltip="视频帧数过多时自动截断，建议100-500"
-              >
-                <InputNumber min={10} max={1000} defaultValue={200} style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item label="选择检测图片 / 视频">
-                <Upload.Dragger
-                  customRequest={customRequest}
-                  fileList={fileList}
-                  onChange={({ fileList: newFileList }) => setFileList(newFileList.slice(-1))}
-                  accept="image/*,video/*"
-                  showUploadList={false}
-                  className="custom-dragger"
-                >
-                  <p className="ant-upload-drag-icon">
-                    <UploadOutlined />
-                  </p>
-                  <p className="ant-upload-text">点击或拖拽文件到此区域上传并检测</p>
-                  <p className="ant-upload-hint">支持 jpg, png, mp4 等常见格式</p>
-                </Upload.Dragger>
-                {detecting && <div className="detect-spin">🚀 YOLO 模型正在飞速推理中，请稍候...</div>}
-              </Form.Item>
-            </Form>
-          </div>
+          <Form form={form} layout="vertical" initialValues={{ location: 'A区-3号楼' }}>
+            <Form.Item name="location" label="预设位置标签" rules={[{ required: true }]}>
+              <Input placeholder="例如：A区" size="large" />
+            </Form.Item>
+            <Form.Item name="max_frames" label="最大处理帧数" tooltip="建议100-500">
+              <InputNumber min={10} max={1000} defaultValue={200} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="选择检测图片 / 视频">
+              <Upload.Dragger customRequest={customRequest} fileList={fileList} onChange={({ fileList: f }) => setFileList(f.slice(-1))} accept="image/*,video/*" showUploadList={false}>
+                <p className="ant-upload-drag-icon"><UploadOutlined /></p>
+                <p className="ant-upload-text">点击或拖拽文件上传并检测</p>
+                <p className="ant-upload-hint">支持 jpg, png, mp4 等格式</p>
+              </Upload.Dragger>
+              {detecting && <div className="detect-spin">🚀 YOLO 模型正在推理中，请稍候...</div>}
+            </Form.Item>
+          </Form>
         </Tabs.TabPane>
 
         <Tabs.TabPane tab="🎥 摄像头 / RTSP 流" key="stream">
-          <div className="tab-content-wrapper">
-            <Form
-              form={streamForm}
-              layout="vertical"
-              initialValues={{ location: '大门主干道', stream_url: '0', max_frames: 100 }}
-              onFinish={handleLiveStart}
-            >
-              <Form.Item
-                name="location"
-                label="预设位置标签"
-                rules={[{ required: true }]}
-              >
-                <Input placeholder="例如：南门" size="large" />
-              </Form.Item>
-              <Form.Item
-                name="stream_url"
-                label="流地址或摄像头ID"
-                rules={[{ required: true }]}
-              >
-                <Input placeholder="默认输入 0 可打开本地摄像头，或填写 rtsp://..." size="large" />
-              </Form.Item>
-              <Form.Item
-                name="max_frames"
-                label="最大采流帧数"
-                rules={[{ required: true }]}
-              >
-                <Input type="number" min={5} size="large" />
-              </Form.Item>
-              <Form.Item>
-                {!isLive ? (
-                  <Button type="primary" htmlType="submit" size="large" block className="stream-btn">
-                    📡 开始实时流分析
-                  </Button>
-                ) : (
-                  <Button danger type="primary" size="large" block onClick={handleLiveStop} className="stream-btn">
-                    🛑 结束推流
-                  </Button>
-                )}
-              </Form.Item>
-            </Form>
-          </div>
-        </Tabs.TabPane>
-
-        <Tabs.TabPane tab="📊 检测报告" key="results">
+          <Form form={streamForm} layout="vertical" initialValues={{ location: '大门主干道', stream_url: '0', max_frames: 100 }} onFinish={handleLiveStart}>
+            <Form.Item name="location" label="预设位置标签" rules={[{ required: true }]}>
+              <Input size="large" />
+            </Form.Item>
+            <Form.Item name="stream_url" label="流地址或摄像头ID" rules={[{ required: true }]}>
+              <Input placeholder="输入 0 打开本地摄像头，或 rtsp://..." size="large" />
+            </Form.Item>
+            <Form.Item name="max_frames" label="最大采流帧数" rules={[{ required: true }]}>
+              <Input type="number" min={5} size="large" />
+            </Form.Item>
+            <Form.Item>
+              {!isLive ? (
+                <Button type="primary" htmlType="submit" size="large" block>📡 开始实时流分析</Button>
+              ) : (
+                <Button danger type="primary" size="large" block onClick={handleLiveStop}>🛑 结束推流</Button>
+              )}
+            </Form.Item>
+          </Form>
         </Tabs.TabPane>
       </Tabs>
+      )}
 
       {liveStreamUrl && isLive && (
         <div className="results-section">
-          <div className="media-preview-box">
-            <div style={{color:'#1890ff', marginBottom: '8px'}}>🔴 直播流侦测中...</div>
-            <img src={liveStreamUrl} alt="Live Stream" className="media-preview" />
-          </div>
+          <div style={{color:'#1890ff', marginBottom: '8px'}}>🔴 直播流侦测中...</div>
+          <img src={liveStreamUrl} alt="Live Stream" className="media-preview" style={{ maxHeight: '600px' }} />
         </div>
       )}
 
       {detectionResults.length > 0 && (
-        <div className="results-section">
-          {imgUrl && (
-             <div className="media-preview-box">
-               {isVideo ? (
-                 <>
-                   <div className="frame-nav">
-                     <Button 
-                       onClick={() => setCurrentFrame(Math.max(0, currentFrame - 1))} 
-                       disabled={currentFrame === 0 || frameList.length === 0}
-                     ><LeftOutlined /> 上一帧</Button>
-                     <span className="frame-counter">
-                       {frameList.length > 0 ? (
-                         <>第 <span>{currentFrame + 1}</span> / {frameList.length} 帧</>
-                       ) : '无检测到帧'}
-                     </span>
-                     <Button 
-                       onClick={() => setCurrentFrame(Math.min(frameList.length - 1, currentFrame + 1))} 
-                       disabled={currentFrame >= frameList.length - 1 || frameList.length === 0}
-                     >下一帧 <RightOutlined /></Button>
-                   </div>
-                   {frameList.length > 0 ? (
-                     <img 
-                       src={`${imgUrl}&frame=${frameList[currentFrame]?.replace('frame_','').replace('.jpg','')}`} 
-                       alt={`帧 ${currentFrame + 1}`} 
-                       className="media-preview" 
-                     />
-                   ) : (
-                     <div className="no-frames-tip">
-                       <h4>视频已处理，但未检测到损伤目标</h4>
-                       <p>请尝试其他视频或调整检测参数</p>
-                     </div>
-                   )}
-                 </>
-               ) : (
-                 <img src={imgUrl} alt="Annotated Output" className="media-preview" />
-               )}
-             </div>
-          )}
+        <div className="results-section" style={{ marginTop: '24px' }}>
+          <Row gutter={[24, 24]}>
+            {imgUrl && (
+              <Col xs={24} lg={10} xl={8}>
+                <Collapse defaultActiveKey={['media']} items={[
+                  { key: 'media', label: <h4>🖼️ 媒体检测画面</h4>, children: (
+                    <div>
+                      {isVideo && frameList.length > 0 ? (
+                        <>
+                          <img src={`${imgUrl}&frame=${frameList[currentFrame]?.replace('frame_','').replace('.jpg','')}`} alt={`帧`} className="media-preview" style={{ width: '100%', maxHeight: '400px' }} />
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: '16px' }}>
+                            <Button icon={<LeftOutlined />} onClick={() => setCurrentFrame(Math.max(0, currentFrame - 1))} disabled={currentFrame < 1} />
+                            <span>{currentFrame + 1} / {frameList.length}</span>
+                            <Button icon={<RightOutlined />} onClick={() => setCurrentFrame(Math.min(frameList.length - 1, currentFrame + 1))} disabled={currentFrame >= frameList.length - 1} />
+                          </div>
+                        </>
+                      ) : (
+                        <img src={imgUrl} alt="Annotated" className="media-preview" style={{ width: '100%', maxHeight: '500px' }} />
+                      )}
+                    </div>
+                  )}
+                ]} />
+                {rawDetections && (
+                  <Collapse items={[{ key: 'json', label: <h4>🗃️ 原始 JSON</h4>, children: <pre style={{ maxHeight: '300px', overflow: 'auto', fontSize: '12px' }}>{JSON.stringify(rawDetections, null, 2)}</pre> }]} style={{ marginTop: '16px' }} />
+                )}
+              </Col>
+            )}
 
-          {rawDetections && (
-             <div className="raw-json-box">
-                <h4>🗃️ 原始 JSON 机器返回数据 <span style={{fontSize: '12px', fontWeight: 'normal', color: '#999'}}>——供二次开发和对接参考</span></h4>
-                <div className="json-container">
-                  <pre>
-                    {JSON.stringify(rawDetections, null, 2)}
-                  </pre>
-                </div>
-             </div>
-          )}
+            <Col xs={24} lg={imgUrl ? 14 : 24} xl={imgUrl ? 16 : 24}>
+              <h4 style={{ marginBottom: '16px' }}>📊 缺陷分析 ({detectionResults.length} 处, {Object.keys(groupedResults).length} 个区域)</h4>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {Object.entries(groupedResults).map(([location, items]) => {
+                  const total = items.length;
+                  const highCount = items.filter(i => i.severity === 'high').length;
+                  const mediumCount = items.filter(i => i.severity === 'medium').length;
+                  const lowCount = items.filter(i => i.severity === 'low').length;
+                  const hasReport = !!aiReports[location];
+                  
+                  // 统计类型，只显示前3个
+                  const typeCounts = items.reduce((acc, i) => { acc[i.type] = (acc[i.type] || 0) + 1; return acc; }, {});
+                  const topTypes = Object.entries(typeCounts).slice(0, 3);
+                  
+                  return (
+                    <Card key={location} size="small" title={
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <EnvironmentOutlined />
+                        <span>{location}</span>
+                        <Tag color="blue">{total}处</Tag>
+                      </div>
+                    } extra={
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {!hasReport && <Button size="small" type="primary" ghost onClick={() => handleFetchAIByLocation(location)} loading={fetchingAI[location]}>生成AI</Button>}
+                        <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => handlePushByLocation(location)} loading={submitting}>推送</Button>
+                      </div>
+                    }>
+                      <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
+                        <Statistic title="严重" value={highCount} valueStyle={{ color: '#ff4d4f' }} suffix={`/ ${total}`} />
+                        <Statistic title="中等" value={mediumCount} valueStyle={{ color: '#fa8c16' }} />
+                        <Statistic title="轻微" value={lowCount} valueStyle={{ color: '#52c41a' }} />
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#888' }}>
+                        {topTypes.map(([type, count]) => <Tag key={type}>{type}: {count}</Tag>)}
+                      </div>
+                      {hasReport && <div style={{ marginTop: '12px', padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>{renderReport(aiReports[location])}</div>}
+                    </Card>
+                  );
+                })}
+              </div>
 
-          <div className="table-header">
-            <h4>📊 缺陷定位分析报告 ({detectionResults.length} 处损坏)</h4>
-          </div>
-
-          <Table
-            rowSelection={rowSelection}
-            dataSource={detectionResults}
-            columns={columns} 
-            pagination={{ pageSize: 10 }}
-            size="middle"
-            className="results-table"
-          />
-          <div className="action-button-group">
-            <Button
-              type="default"
-              size="large"
-              className="action-btn batch-ai-btn"
-              onClick={handleFetchAllAI}
-              disabled={selectedRowKeys.length === 0}
-            >
-              🧩 一键为选中项生成 AI 建议
-            </Button>
-            <Button
-              type="primary"
-              size="large"
-              className="action-btn"
-              icon={<SendOutlined />}
-              onClick={handlePushSelected}
-              loading={submitting}
-              disabled={selectedRowKeys.length === 0}
-            >
-              🚀 推送选中项至系统
-            </Button>
-            <Button
-              danger
-              type="primary"
-              size="large"
-              className="action-btn"
-              icon={<SendOutlined />}
-              onClick={handlePushHigh}
-              loading={submitting}
-              disabled={!detectionResults.some(item => item.severity && item.severity.toLowerCase() === 'high')}
-            >
-              🚨 一键归档严重(High)项
-            </Button>
-          </div>
+              <div style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
+                <Button type="default" size="large" onClick={handleFetchAllAI} disabled={!Object.keys(groupedResults).length}>🧩 生成所有AI建议</Button>
+                <Button type="primary" size="large" icon={<SendOutlined />} onClick={handlePushAll} loading={submitting} disabled={!detectionResults.length}>🚀 推送所有区域</Button>
+              </div>
+            </Col>
+          </Row>
         </div>
       )}
     </Card>

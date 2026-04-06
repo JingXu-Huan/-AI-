@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Typography, message, Spin } from 'antd';
+import { Layout, Typography, message, Spin, Collapse } from 'antd';
 import RepairList from './components/RepairList';
 import UploadDetection from './components/UploadDetection';
 import { getAllRepairs } from './api';
@@ -25,6 +25,24 @@ const App = () => {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  const collapseItems = [
+    {
+      key: 'upload',
+      label: <span style={{ fontWeight: 600, fontSize: '16px' }}>📸 实机巡检与检测 (智能上传)</span>,
+      children: <UploadDetection onTaskAdded={fetchTasks} />,
+    },
+    {
+      key: 'tasks',
+      label: <span style={{ fontWeight: 600, fontSize: '16px' }}>🔧 待处理维修工单管理看板</span>,
+      children: (
+        <Spin spinning={loading} tip="正在加载任务列表...">
+          <RepairList repairs={repairs} loading={loading} refreshTasks={fetchTasks} />
+        </Spin>
+      ),
+    },
+  ];
+
   return (
     <Layout className="layout" style={{ minHeight: '100vh' }}>
       <Header>
@@ -34,10 +52,12 @@ const App = () => {
       </Header>
       <Content style={{ padding: '24px 50px' }}>
         <div className="site-layout-content" style={{ background: '#fff', padding: 24, borderRadius: 8 }}>
-          <UploadDetection onTaskAdded={fetchTasks} />
-          <Spin spinning={loading} tip="正在加载任务列表...">
-            <RepairList repairs={repairs} loading={loading} refreshTasks={fetchTasks} />
-          </Spin>
+          <Collapse
+            defaultActiveKey={['upload', 'tasks']}
+            items={collapseItems}
+            size="large"
+            style={{ background: 'transparent', border: 'none' }}
+          />
         </div>
       </Content>
       <Footer style={{ textAlign: 'center' }}>
