@@ -1,6 +1,6 @@
 ﻿import React, { useState } from 'react';
 import { Upload, Button, Form, Input, InputNumber, message, Card, Table, Tag, Tabs } from 'antd';
-import { UploadOutlined, SendOutlined } from '@ant-design/icons';
+import { UploadOutlined, SendOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import { writeToDB, getDescFromAI } from '../api';
 import './UploadDetection.css';
 
@@ -8,14 +8,16 @@ const UploadDetection = ({ onTaskAdded }) => {
   const [form] = Form.useForm();
   const [streamForm] = Form.useForm();
   const [fileList, setFileList] = useState([]);
-  const [detecting, setDetecting] = useState(false);
   const [isLive, setIsLive] = useState(false);
   const [liveStreamUrl, setLiveStreamUrl] = useState(null);
+  const [detecting, setDetecting] = useState(false);
   const [detectionResults, setDetectionResults] = useState([]);
   const [rawDetections, setRawDetections] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [imgUrl, setImgUrl] = useState(null);
   const [isVideo, setIsVideo] = useState(false);
+  const [frameList, setFrameList] = useState([]);
+  const [currentFrame, setCurrentFrame] = useState(0);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [fetchingAI, setFetchingAI] = useState({});
   const [activeTab, setActiveTab] = useState('file');
@@ -96,6 +98,19 @@ const UploadDetection = ({ onTaskAdded }) => {
       setSelectedRowKeys(formattedResults.map(item => item.key));
       if (result.stem) {
         setImgUrl('/api/image?stem=' + encodeURIComponent(result.stem));
+        // 获取视频检测的帧列表
+        if (isVideoOutput) {
+          try {
+            const res = await fetch('/api/frames?stem=' + encodeURIComponent(result.stem));
+            const data = await res.json();
+            if (data.frames && data.frames.length > 0) {
+              setFrameList(data.frames);
+              setCurrentFrame(0);
+            }
+          } catch (e) {
+            console.error('获取帧列表失败:', e);
+          }
+        }
       }
       message.success('检测分析完成！');
       if (onSuccess) onSuccess(result, null);
@@ -104,8 +119,6 @@ const UploadDetection = ({ onTaskAdded }) => {
       message.error('检测失败: ' + error.message);
     } finally {
       setDetecting(false);
-      setIsLive(false);
-      setLiveStreamUrl(null);
     }
   };
 
@@ -141,47 +154,47 @@ const UploadDetection = ({ onTaskAdded }) => {
   };
 
   const handleLiveStop = async () => {
-     setDetecting(false);
-     setIsLive(false);
-     setLiveStreamUrl(null);
-     
-     try {
-       const res = await fetch('/api/stream_stop');
-       const result = await res.json();
-       let detections = result.data || [];
-       setRawDetections(detections);
-       
-       let allDets = [];
-       for(let i=0; i<detections.length; i++) {
-          if (detections[i].detections) {
-              allDets = allDets.concat(detections[i].detections);
-          }
-       }
-       detections = allDets;
+    setDetecting(false);
+    setIsLive(false);
+    setLiveStreamUrl(null);
+    
+    try {
+      const res = await fetch('/api/stream_stop');
+      const result = await res.json();
+      let detections = result.data || [];
+      setRawDetections(detections);
+      
+      let allDets = [];
+      for (let i = 0; i < detections.length; i++) {
+        if (detections[i].detections) {
+          allDets = allDets.concat(detections[i].detections);
+        }
+      }
+      detections = allDets;
 
-       const formattedResults = [];
-       for (let i = 0; i < detections.length; i++) {
-          const det = detections[i];
-          let typeName = 'Unknown';
-          if (det.type) typeName = det.type;
-          else if (det.class_name) typeName = det.class_name;
-          
-          formattedResults.push({
-            key: i,
-            type: typeName,
-            confidence: det.confidence,
-            location: det.location || '大门主干道',
-            severity: det.severity || 'low',
-            bbox: det.bounding_box ? `[${det.bounding_box.x1}, ${det.bounding_box.y1}, ${det.bounding_box.x2}, ${det.bounding_box.y2}]` : 'N/A',
-            report: null
-          });
-       }
-       setDetectionResults(formattedResults);
-       setSelectedRowKeys(formattedResults.map(item => item.key));
-       message.success(`流检测结束，共捕获 ${formattedResults.length} 个受损记录！`);
-     } catch(e) {
-       console.error('Stop error:', e);
-     }
+      const formattedResults = [];
+      for (let i = 0; i < detections.length; i++) {
+        const det = detections[i];
+        let typeName = 'Unknown';
+        if (det.type) typeName = det.type;
+        else if (det.class_name) typeName = det.class_name;
+        
+        formattedResults.push({
+          key: i,
+          type: typeName,
+          confidence: det.confidence,
+          location: det.location || '大门主干道',
+          severity: det.severity || 'low',
+          bbox: det.bounding_box ? `[${det.bounding_box.x1}, ${det.bounding_box.y1}, ${det.bounding_box.x2}, ${det.bounding_box.y2}]` : 'N/A',
+          report: null
+        });
+      }
+      setDetectionResults(formattedResults);
+      setSelectedRowKeys(formattedResults.map(item => item.key));
+      message.success(`流检测结束，共捕获 ${formattedResults.length} 个受损记录！`);
+    } catch(e) {
+      console.error('Stop error:', e);
+    }
   };
 
   const handleFetchAI = async (recordKey) => {
@@ -369,8 +382,8 @@ const UploadDetection = ({ onTaskAdded }) => {
           </div>
         </Tabs.TabPane>
 
-        <Tabs.TabPane tab="🎥 摄像头 / RTPS 流" key="stream">
-           <div className="tab-content-wrapper">
+        <Tabs.TabPane tab="🎥 摄像头 / RTSP 流" key="stream">
+          <div className="tab-content-wrapper">
             <Form
               form={streamForm}
               layout="vertical"
@@ -393,7 +406,7 @@ const UploadDetection = ({ onTaskAdded }) => {
               </Form.Item>
               <Form.Item
                 name="max_frames"
-                label="最大采流帧数（防止死循环）"
+                label="最大采流帧数"
                 rules={[{ required: true }]}
               >
                 <Input type="number" min={5} size="large" />
@@ -401,34 +414,65 @@ const UploadDetection = ({ onTaskAdded }) => {
               <Form.Item>
                 {!isLive ? (
                   <Button type="primary" htmlType="submit" size="large" block className="stream-btn">
-                    📡 开始实时流推流分析
+                    📡 开始实时流分析
                   </Button>
                 ) : (
                   <Button danger type="primary" size="large" block onClick={handleLiveStop} className="stream-btn">
-                    🛑 结束推流并生成报告
+                    🛑 结束推流
                   </Button>
                 )}
               </Form.Item>
             </Form>
           </div>
         </Tabs.TabPane>
+
+        <Tabs.TabPane tab="📊 检测报告" key="results">
+        </Tabs.TabPane>
       </Tabs>
 
       {liveStreamUrl && isLive && (
-         <div className="results-section">
-           <div className="media-preview-box">
-             <div style={{color:'#1890ff', marginBottom: '8px'}}>🔴 直播流侦测中...</div>
-             <img src={liveStreamUrl} alt="Live Stream" className="media-preview" />
-           </div>
-         </div>
+        <div className="results-section">
+          <div className="media-preview-box">
+            <div style={{color:'#1890ff', marginBottom: '8px'}}>🔴 直播流侦测中...</div>
+            <img src={liveStreamUrl} alt="Live Stream" className="media-preview" />
+          </div>
+        </div>
       )}
 
-      {!isLive && detectionResults.length > 0 && (
+      {detectionResults.length > 0 && (
         <div className="results-section">
           {imgUrl && (
              <div className="media-preview-box">
                {isVideo ? (
-                 <video src={imgUrl} controls autoPlay loop muted className="media-preview video-preview" />
+                 <>
+                   <div className="frame-nav">
+                     <Button 
+                       onClick={() => setCurrentFrame(Math.max(0, currentFrame - 1))} 
+                       disabled={currentFrame === 0 || frameList.length === 0}
+                     ><LeftOutlined /> 上一帧</Button>
+                     <span className="frame-counter">
+                       {frameList.length > 0 ? (
+                         <>第 <span>{currentFrame + 1}</span> / {frameList.length} 帧</>
+                       ) : '无检测到帧'}
+                     </span>
+                     <Button 
+                       onClick={() => setCurrentFrame(Math.min(frameList.length - 1, currentFrame + 1))} 
+                       disabled={currentFrame >= frameList.length - 1 || frameList.length === 0}
+                     >下一帧 <RightOutlined /></Button>
+                   </div>
+                   {frameList.length > 0 ? (
+                     <img 
+                       src={`${imgUrl}&frame=${frameList[currentFrame]?.replace('frame_','').replace('.jpg','')}`} 
+                       alt={`帧 ${currentFrame + 1}`} 
+                       className="media-preview" 
+                     />
+                   ) : (
+                     <div className="no-frames-tip">
+                       <h4>视频已处理，但未检测到损伤目标</h4>
+                       <p>请尝试其他视频或调整检测参数</p>
+                     </div>
+                   )}
+                 </>
                ) : (
                  <img src={imgUrl} alt="Annotated Output" className="media-preview" />
                )}

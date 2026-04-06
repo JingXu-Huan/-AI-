@@ -9,6 +9,29 @@ function pythonDetectionPlugin() {
   return {
     name: 'python-detection-plugin',
     configureServer(server) {
+      // 新增：获取frames目录下的帧列表
+      server.middlewares.use('/api/frames', (req, res, next) => {
+        try {
+          const urlObj = new URL(req.url, 'http://localhost');
+          const stem = urlObj.searchParams.get('stem');
+          if (stem) {
+            const projectRoot = path.resolve(fs.realpathSync('.'), '..');
+            const framesDir = path.join(projectRoot, 'outputs', stem, 'frames');
+            if (fs.existsSync(framesDir) && fs.statSync(framesDir).isDirectory()) {
+              const files = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, frames: files }));
+              return;
+            }
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, frames: [] }));
+        } catch(e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+
       // 暴露一个新路由用来读取本地的图片/视频/帧
       server.middlewares.use('/api/image', (req, res, next) => {
         try {

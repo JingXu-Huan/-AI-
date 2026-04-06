@@ -1,7 +1,7 @@
 """
 perception/detector.py
 
-基于YOLO的校园道路损伤检测器增强版。
+基于YOLO的校园道路损伤检测器。
 
 支持：
   - road_crack      (路面裂缝)
