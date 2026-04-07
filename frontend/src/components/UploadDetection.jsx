@@ -378,9 +378,25 @@ const UploadDetection = ({ onTaskAdded }) => {
                   const lowCount = items.filter(i => i.severity === 'low').length;
                   const hasReport = !!aiReports[location];
                   
-                  // 统计类型，只显示前3个
+                  // 统计类型，显示全部
                   const typeCounts = items.reduce((acc, i) => { acc[i.type] = (acc[i.type] || 0) + 1; return acc; }, {});
-                  const topTypes = Object.entries(typeCounts).slice(0, 3);
+                  const allTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+                  const topTypes = allTypes.slice(0, 4);
+                  const otherTypes = allTypes.slice(4);
+                  
+                  // 置信度统计
+                  const avgConfidence = items.reduce((sum, i) => sum + (i.confidence || 0), 0) / total;
+                  const highConfCount = items.filter(i => (i.confidence || 0) > 0.8).length;
+                  const midConfCount = items.filter(i => (i.confidence || 0) > 0.5 && (i.confidence || 0) <= 0.8).length;
+                  const lowConfCount = items.filter(i => (i.confidence || 0) <= 0.5).length;
+                  
+                  // 简易柱状图数据
+                  const severityData = [
+                    { label: '严重', count: highCount, color: '#ff4d4f' },
+                    { label: '中等', count: mediumCount, color: '#fa8c16' },
+                    { label: '轻微', count: lowCount, color: '#52c41a' }
+                  ];
+                  const maxCount = Math.max(...severityData.map(d => d.count), 1);
                   
                   return (
                     <Card key={location} size="small" title={
@@ -388,6 +404,7 @@ const UploadDetection = ({ onTaskAdded }) => {
                         <EnvironmentOutlined />
                         <span>{location}</span>
                         <Tag color="blue">{total}处</Tag>
+                        {highCount > 0 && <Tag color="red">紧急 {highCount}</Tag>}
                       </div>
                     } extra={
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -395,14 +412,61 @@ const UploadDetection = ({ onTaskAdded }) => {
                         <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => handlePushByLocation(location)} loading={submitting}>推送</Button>
                       </div>
                     }>
-                      <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
-                        <Statistic title="严重" value={highCount} valueStyle={{ color: '#ff4d4f' }} suffix={`/ ${total}`} />
-                        <Statistic title="中等" value={mediumCount} valueStyle={{ color: '#fa8c16' }} />
-                        <Statistic title="轻微" value={lowCount} valueStyle={{ color: '#52c41a' }} />
+                      {/* 严重程度柱状图 */}
+                      <div style={{ marginBottom: '16px' }}>
+                        <div style={{ fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>🔴 严重程度分布</div>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '60px' }}>
+                          {severityData.map(d => (
+                            <div key={d.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                              <div style={{ 
+                                width: '100%', 
+                                height: `${(d.count / maxCount) * 50}px`, 
+                                background: d.color, 
+                                borderRadius: '4px 4px 0 0',
+                                minHeight: d.count > 0 ? '4px' : '0'
+                              }} />
+                              <div style={{ fontSize: '11px', marginTop: '4px', color: d.color, fontWeight: 600 }}>{d.count}</div>
+                              <div style={{ fontSize: '10px', color: '#888' }}>{d.label}</div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '12px', color: '#888' }}>
-                        {topTypes.map(([type, count]) => <Tag key={type}>{type}: {count}</Tag>)}
+                      
+                      {/* 置信度分布 */}
+                      <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', padding: '12px', background: '#fafafa', borderRadius: '6px' }}>
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#1890ff' }}>{(avgConfidence * 100).toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#888' }}>平均置信度</div>
+                        </div>
+                        <div style={{ width: '1px', background: '#ddd' }} />
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#52c41a' }}>{highConfCount}</div>
+                          <div style={{ fontSize: '11px', color: '#888' }}>高置信 (&gt;80%)</div>
+                        </div>
+                        <div style={{ width: '1px', background: '#ddd' }} />
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#fa8c16' }}>{midConfCount}</div>
+                          <div style={{ fontSize: '11px', color: '#888' }}>中置信 (50-80%)</div>
+                        </div>
+                        <div style={{ width: '1px', background: '#ddd' }} />
+                        <div style={{ flex: 1, textAlign: 'center' }}>
+                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#999' }}>{lowConfCount}</div>
+                          <div style={{ fontSize: '11px', color: '#888' }}>低置信 (&lt;50%)</div>
+                        </div>
                       </div>
+                      
+                      {/* 类型分布 Tag */}
+                      <div style={{ fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>📋 缺陷类型</div>
+                      <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {topTypes.map(([type, count]) => (
+                          <Tag key={type} color="blue">{type}: {count}</Tag>
+                        ))}
+                        {otherTypes.map(([type, count]) => (
+                          <Tag key={type} color="default">{type}: {count}</Tag>
+                        ))}
+                      </div>
+                      
+                      {/* AI 报告 */}
                       {hasReport && <div style={{ marginTop: '12px', padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>{renderReport(aiReports[location])}</div>}
                     </Card>
                   );
