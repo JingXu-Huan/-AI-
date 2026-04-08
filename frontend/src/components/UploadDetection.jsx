@@ -200,6 +200,20 @@ const UploadDetection = ({ onTaskAdded }) => {
     finally { setFetchingAI(prev => ({ ...prev, [location]: false })); }
   };
 
+  // 获取当前图片作为 File 对象
+  const getCurrentImageFile = async () => {
+    if (!imgUrl) return null;
+    try {
+      const response = await fetch(imgUrl);
+      const blob = await response.blob();
+      // 从 imgUrl 提取文件名
+      const stem = new URL(imgUrl, 'http://localhost').searchParams.get('stem') || 'image';
+      const ext = stem.includes('_annotated') ? '.jpg' : '.jpg';
+      const filename = stem + ext;
+      return new File([blob], filename, { type: 'image/jpeg' });
+    } catch (e) { return null; }
+  };
+
   // 按区域推送
   const handlePushByLocation = async (location) => {
     const items = groupedResults[location] || [];
@@ -208,7 +222,9 @@ const UploadDetection = ({ onTaskAdded }) => {
     try {
       const aggregated = aggregateResults(items);
       aggregated.location = location;
-      await writeToDB(aggregated);
+      // 直接附加图片文件
+      const imageFile = await getCurrentImageFile();
+      await writeToDB(aggregated, imageFile);
       message.success(`区域 "${location}" 检测结果已推送！`);
       setDetectionResults(prev => prev.filter(r => r.location !== location));
       setAiReports(prev => { const n = {...prev}; delete n[location]; return n; });
@@ -223,11 +239,12 @@ const UploadDetection = ({ onTaskAdded }) => {
     if (!locations.length) return;
     setSubmitting(true);
     try {
+      const imageFile = await getCurrentImageFile();
       for (const location of locations) {
         const items = groupedResults[location] || [];
         const aggregated = aggregateResults(items);
         aggregated.location = location;
-        await writeToDB(aggregated);
+        await writeToDB(aggregated, imageFile);
       }
       message.success(`已推送 ${locations.length} 个区域的检测结果！`);
       setDetectionResults([]); setAiReports({}); setImgUrl(null);
@@ -370,27 +387,25 @@ const UploadDetection = ({ onTaskAdded }) => {
             <Col xs={24} lg={imgUrl ? 14 : 24} xl={imgUrl ? 16 : 24}>
               <h4 style={{ marginBottom: '16px' }}>📊 缺陷分析 ({detectionResults.length} 处, {Object.keys(groupedResults).length} 个区域)</h4>
               
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {Object.entries(groupedResults).map(([location, items]) => {
+              <Collapse
+                defaultActiveKey={Object.keys(groupedResults)}
+                items={Object.entries(groupedResults).map(([location, items]) => {
                   const total = items.length;
                   const highCount = items.filter(i => i.severity === 'high').length;
                   const mediumCount = items.filter(i => i.severity === 'medium').length;
                   const lowCount = items.filter(i => i.severity === 'low').length;
                   const hasReport = !!aiReports[location];
                   
-                  // 统计类型，显示全部
                   const typeCounts = items.reduce((acc, i) => { acc[i.type] = (acc[i.type] || 0) + 1; return acc; }, {});
                   const allTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
                   const topTypes = allTypes.slice(0, 4);
                   const otherTypes = allTypes.slice(4);
                   
-                  // 置信度统计
                   const avgConfidence = items.reduce((sum, i) => sum + (i.confidence || 0), 0) / total;
                   const highConfCount = items.filter(i => (i.confidence || 0) > 0.8).length;
                   const midConfCount = items.filter(i => (i.confidence || 0) > 0.5 && (i.confidence || 0) <= 0.8).length;
                   const lowConfCount = items.filter(i => (i.confidence || 0) <= 0.5).length;
                   
-                  // 简易柱状图数据
                   const severityData = [
                     { label: '严重', count: highCount, color: '#ff4d4f' },
                     { label: '中等', count: mediumCount, color: '#fa8c16' },
@@ -398,80 +413,81 @@ const UploadDetection = ({ onTaskAdded }) => {
                   ];
                   const maxCount = Math.max(...severityData.map(d => d.count), 1);
                   
-                  return (
-                    <Card key={location} size="small" title={
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  return {
+                    key: location,
+                    label: (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <EnvironmentOutlined />
-                        <span>{location}</span>
+                        <span style={{ fontWeight: 'bold' }}>{location}</span>
                         <Tag color="blue">{total}处</Tag>
                         {highCount > 0 && <Tag color="red">紧急 {highCount}</Tag>}
                       </div>
-                    } extra={
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                    ),
+                    extra: (
+                      <div style={{ display: 'flex', gap: '8px' }} onClick={e => e.stopPropagation()}>
                         {!hasReport && <Button size="small" type="primary" ghost onClick={() => handleFetchAIByLocation(location)} loading={fetchingAI[location]}>生成AI</Button>}
                         <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => handlePushByLocation(location)} loading={submitting}>推送</Button>
                       </div>
-                    }>
-                      {/* 严重程度柱状图 */}
-                      <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>🔴 严重程度分布</div>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '60px' }}>
-                          {severityData.map(d => (
-                            <div key={d.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                              <div style={{ 
-                                width: '100%', 
-                                height: `${(d.count / maxCount) * 50}px`, 
-                                background: d.color, 
-                                borderRadius: '4px 4px 0 0',
-                                minHeight: d.count > 0 ? '4px' : '0'
-                              }} />
-                              <div style={{ fontSize: '11px', marginTop: '4px', color: d.color, fontWeight: 600 }}>{d.count}</div>
-                              <div style={{ fontSize: '10px', color: '#888' }}>{d.label}</div>
-                            </div>
+                    ),
+                    children: (
+                      <div>
+                        <div style={{ marginBottom: '16px' }}>
+                          <div style={{ fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>🔴 严重程度分布</div>
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '60px' }}>
+                            {severityData.map(d => (
+                              <div key={d.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <div style={{ 
+                                  width: '100%', 
+                                  height: `${(d.count / maxCount) * 50}px`, 
+                                  background: d.color, 
+                                  borderRadius: '4px 4px 0 0',
+                                  minHeight: d.count > 0 ? '4px' : '0'
+                                }} />
+                                <div style={{ fontSize: '11px', marginTop: '4px', color: d.color, fontWeight: 600 }}>{d.count}</div>
+                                <div style={{ fontSize: '10px', color: '#888' }}>{d.label}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', padding: '12px', background: '#fafafa', borderRadius: '6px' }}>
+                          <div style={{ flex: 1, textAlign: 'center' }}>
+                            <div style={{ fontSize: '20px', fontWeight: 600, color: '#1890ff' }}>{(avgConfidence * 100).toFixed(1)}%</div>
+                            <div style={{ fontSize: '11px', color: '#888' }}>平均置信度</div>
+                          </div>
+                          <div style={{ width: '1px', background: '#ddd' }} />
+                          <div style={{ flex: 1, textAlign: 'center' }}>
+                            <div style={{ fontSize: '20px', fontWeight: 600, color: '#52c41a' }}>{highConfCount}</div>
+                            <div style={{ fontSize: '11px', color: '#888' }}>高置信 (&gt;80%)</div>
+                          </div>
+                          <div style={{ width: '1px', background: '#ddd' }} />
+                          <div style={{ flex: 1, textAlign: 'center' }}>
+                            <div style={{ fontSize: '20px', fontWeight: 600, color: '#fa8c16' }}>{midConfCount}</div>
+                            <div style={{ fontSize: '11px', color: '#888' }}>中置信 (50-80%)</div>
+                          </div>
+                          <div style={{ width: '1px', background: '#ddd' }} />
+                          <div style={{ flex: 1, textAlign: 'center' }}>
+                            <div style={{ fontSize: '20px', fontWeight: 600, color: '#999' }}>{lowConfCount}</div>
+                            <div style={{ fontSize: '11px', color: '#888' }}>低置信 (&lt;50%)</div>
+                          </div>
+                        </div>
+                        
+                        <div style={{ fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>📋 缺陷类型</div>
+                        <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {topTypes.map(([type, count]) => (
+                            <Tag key={type} color="blue">{type}: {count}</Tag>
+                          ))}
+                          {otherTypes.map(([type, count]) => (
+                            <Tag key={type} color="default">{type}: {count}</Tag>
                           ))}
                         </div>
+                        
+                        {hasReport && <div style={{ marginTop: '12px', padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>{renderReport(aiReports[location])}</div>}
                       </div>
-                      
-                      {/* 置信度分布 */}
-                      <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', padding: '12px', background: '#fafafa', borderRadius: '6px' }}>
-                        <div style={{ flex: 1, textAlign: 'center' }}>
-                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#1890ff' }}>{(avgConfidence * 100).toFixed(1)}%</div>
-                          <div style={{ fontSize: '11px', color: '#888' }}>平均置信度</div>
-                        </div>
-                        <div style={{ width: '1px', background: '#ddd' }} />
-                        <div style={{ flex: 1, textAlign: 'center' }}>
-                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#52c41a' }}>{highConfCount}</div>
-                          <div style={{ fontSize: '11px', color: '#888' }}>高置信 (&gt;80%)</div>
-                        </div>
-                        <div style={{ width: '1px', background: '#ddd' }} />
-                        <div style={{ flex: 1, textAlign: 'center' }}>
-                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#fa8c16' }}>{midConfCount}</div>
-                          <div style={{ fontSize: '11px', color: '#888' }}>中置信 (50-80%)</div>
-                        </div>
-                        <div style={{ width: '1px', background: '#ddd' }} />
-                        <div style={{ flex: 1, textAlign: 'center' }}>
-                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#999' }}>{lowConfCount}</div>
-                          <div style={{ fontSize: '11px', color: '#888' }}>低置信 (&lt;50%)</div>
-                        </div>
-                      </div>
-                      
-                      {/* 类型分布 Tag */}
-                      <div style={{ fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>📋 缺陷类型</div>
-                      <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {topTypes.map(([type, count]) => (
-                          <Tag key={type} color="blue">{type}: {count}</Tag>
-                        ))}
-                        {otherTypes.map(([type, count]) => (
-                          <Tag key={type} color="default">{type}: {count}</Tag>
-                        ))}
-                      </div>
-                      
-                      {/* AI 报告 */}
-                      {hasReport && <div style={{ marginTop: '12px', padding: '12px', background: '#f5f5f5', borderRadius: '6px' }}>{renderReport(aiReports[location])}</div>}
-                    </Card>
-                  );
+                    )
+                  };
                 })}
-              </div>
+              />
 
               <div style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
                 <Button type="default" size="large" onClick={handleFetchAllAI} disabled={!Object.keys(groupedResults).length}>🧩 生成所有AI建议</Button>

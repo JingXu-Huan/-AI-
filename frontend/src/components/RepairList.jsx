@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Table, Button, Tag, Space, Modal, Select, message, Popconfirm } from 'antd';
-import { updateRepairStatus, deleteRepair, analyze } from '../api';
+import { Table, Button, Tag, Space, Modal, Select, message, Popconfirm, Image } from 'antd';
+import { updateRepairStatus, deleteRepair, analyze, getRepairImgUrls } from '../api';
 
 const { Option } = Select;
 
@@ -16,6 +16,7 @@ const RepairList = ({ repairs, loading, refreshTasks }) => {
   const [selectedRepair, setSelectedRepair] = useState(null);
   const [aiReport, setAiReport] = useState('');
   const [isReportLoading, setIsReportLoading] = useState(false);
+  const [imgUrls, setImgUrls] = useState([]);
 
   const handleUpdateStatus = async (id, newStatus) => {
     try {
@@ -39,10 +40,17 @@ const RepairList = ({ repairs, loading, refreshTasks }) => {
     }
   };
 
-  const showDetails = (record) => {
+  const showDetails = async (record) => {
     setSelectedRepair(record);
-    setAiReport(''); // 清空旧报告
+    setAiReport('');
     setIsModalVisible(true);
+    setImgUrls([]);
+    try {
+      const res = await getRepairImgUrls(record.id);
+      setImgUrls(res.data.data || []);
+    } catch (e) {
+      console.error('获取图片失败:', e);
+    }
   };
 
   const handleGenerateReport = async () => {
@@ -138,6 +146,15 @@ const RepairList = ({ repairs, loading, refreshTasks }) => {
     { title: '损坏类型', dataIndex: 'type', key: 'type' },
     { title: '位置', dataIndex: 'location', key: 'location' },
     {
+      title: '图片',
+      key: 'image',
+      render: (_, record) => {
+        // 表格中显示第一张图片（点击详情可看全部）
+        const firstUrl = record.imageUrls?.[0];
+        return firstUrl ? <Image src={firstUrl} width={60} height={60} style={{objectFit: 'cover', borderRadius: 4}} /> : <Tag>无</Tag>;
+      },
+    },
+    {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
@@ -204,6 +221,14 @@ const RepairList = ({ repairs, loading, refreshTasks }) => {
             <p><strong>损坏类型:</strong> {selectedRepair.type}</p>
             <p><strong>位置:</strong> {selectedRepair.location}</p>
             <p><strong>当前状态:</strong> <Tag color={statusColors[selectedRepair.status]}>{selectedRepair.status.toUpperCase()}</Tag></p>
+            {imgUrls.length > 0 && (
+              <p>
+                <strong>检测图片:</strong><br />
+                {imgUrls.map((url, idx) => (
+                  <Image key={idx} src={url} style={{maxWidth: '100%', maxHeight: 300, marginTop: 8, marginRight: 8}} />
+                ))}
+              </p>
+            )}
             <hr />
             <h4>AI维修报告生成</h4>
             <Button onClick={handleGenerateReport} loading={isReportLoading} style={{ marginBottom: 16 }}>
