@@ -59,7 +59,7 @@ const RepairList = ({ repairs, loading, refreshTasks }) => {
     try {
       const aggregated = parseReportToDetectionResult(selectedRepair.report, selectedRepair.type);
       aggregated.location = selectedRepair.location;
-      
+      aggregated.id = selectedRepair.id;
       const result = await analyze(aggregated);
       // AiAnalysisResult is an object, convert to formatted string
       const reportData = result.data.data;

@@ -9,7 +9,7 @@ model:
   # 单张图最大检测框数量
   max_detections: 100
   # YOLO 推理输入尺寸
-  image_size: 640
+  image_size: 896
 
 # 类别索引映射（必须与训练时 names 顺序一致）
 class_map:

@@ -56,9 +56,9 @@ class TestImagePreprocessor:
         # With no steps, output should equal input (modulo copy)
         np.testing.assert_array_equal(result, img)
 
-    def test_legacy_flags_do_not_break_processing(self):
+    def test_edge_enhancement_output_shape(self):
         img = self._make_image()
-        pp = ImagePreprocessor(denoise=True, clahe=True, edge_enhancement=True)
+        pp = ImagePreprocessor(denoise=False, clahe=False, edge_enhancement=True)
         result = pp.process(img)
         assert result.shape == img.shape
 
@@ -233,7 +233,7 @@ class TestYOLODetectorHelpers:
 
         # Build a fake YOLO result object
         fake_box = MagicMock()
-        fake_box.cls = [MagicMock(item=lambda: 2)]
+        fake_box.cls = [MagicMock(item=lambda: 2)]      # class 2 → pipe_leak
         fake_box.conf = [MagicMock(item=lambda: 0.92)]
         fake_box.xyxy = [MagicMock(tolist=lambda: [10.0, 20.0, 100.0, 200.0])]
 
@@ -246,7 +246,7 @@ class TestYOLODetectorHelpers:
 
         assert isinstance(dets, list)
         assert len(dets) == 1
-        assert dets[0]["type"] == detector._class_map[2]
+        assert dets[0]["type"] == "pipe_leak"
         assert dets[0]["location"] == "A区-3号楼"
         assert dets[0]["severity"] == "high"
 

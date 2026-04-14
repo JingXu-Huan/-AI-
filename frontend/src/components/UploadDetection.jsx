@@ -192,7 +192,9 @@ const UploadDetection = ({ onTaskAdded }) => {
     try {
       const items = groupedResults[location] || [];
       const aggregated = aggregateResults(items);
+      // 无状态调用，使用 id=0 表示非关联到具体维修任务
       aggregated.location = location;
+      aggregated.id = 0;
       const aiResponse = await analyze(aggregated);
       setAiReports(prev => ({ ...prev, [location]: aiResponse.data.data || {} }));
       message.success(`区域 "${location}" AI 维修建议已生成！`);
@@ -262,7 +264,9 @@ const UploadDetection = ({ onTaskAdded }) => {
       for (const location of locations) {
         const items = groupedResults[location] || [];
         const aggregated = aggregateResults(items);
+        // 无状态调用（批量/区域分析），id=0 表示不关联到数据库中的某个任务
         aggregated.location = location;
+        aggregated.id = 0;
         const aiResponse = await analyze(aggregated);
         setAiReports(prev => ({ ...prev, [location]: aiResponse.data.data || {} }));
       }
@@ -432,25 +436,27 @@ const UploadDetection = ({ onTaskAdded }) => {
                     children: (
                       <div>
                         <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>🔴 严重程度分布</div>
-                          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', height: '60px' }}>
+                          <div style={{ fontSize: '13px', marginBottom: '12px', fontWeight: 600 }}>🔴 严重程度分布</div>
+                          <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', height: '160px', padding: '0 16px', marginBottom: '8px' }}>
                             {severityData.map(d => (
                               <div key={d.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                 <div style={{ 
                                   width: '100%', 
-                                  height: `${(d.count / maxCount) * 50}px`, 
-                                  background: d.color, 
-                                  borderRadius: '4px 4px 0 0',
-                                  minHeight: d.count > 0 ? '4px' : '0'
+                                  height: `${(d.count / maxCount) * 135}px`,
+                                  background: `linear-gradient(to top, ${d.color}dd, ${d.color})`,
+                                  borderRadius: '6px 6px 0 0',
+                                  minHeight: d.count > 0 ? '6px' : '0',
+                                  transition: 'height 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                                 }} />
-                                <div style={{ fontSize: '11px', marginTop: '4px', color: d.color, fontWeight: 600 }}>{d.count}</div>
-                                <div style={{ fontSize: '10px', color: '#888' }}>{d.label}</div>
+                                <div style={{ fontSize: '14px', marginTop: '6px', color: d.color, fontWeight: 800 }}>{d.count}</div>
+                                <div style={{ fontSize: '12px', color: '#555', fontWeight: 500 }}>{d.label}</div>
                               </div>
                             ))}
                           </div>
                         </div>
                         
-                        <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', padding: '12px', background: '#fafafa', borderRadius: '6px' }}>
+                        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', padding: '16px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #f0f0f0' }}>
                           <div style={{ flex: 1, textAlign: 'center' }}>
                             <div style={{ fontSize: '20px', fontWeight: 600, color: '#1890ff' }}>{(avgConfidence * 100).toFixed(1)}%</div>
                             <div style={{ fontSize: '11px', color: '#888' }}>平均置信度</div>

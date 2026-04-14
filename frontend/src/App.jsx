@@ -2,6 +2,7 @@
 import { Layout, Typography, message, Spin, Collapse } from 'antd';
 import RepairList from './components/RepairList';
 import UploadDetection from './components/UploadDetection';
+import Weather from './components/Weather';
 import { getAllRepairs } from './api';
 import 'antd/dist/reset.css';
 import './App.css';
@@ -49,6 +50,9 @@ const App = () => {
         <Title level={3} style={{ color: 'white', lineHeight: '64px', float: 'left', margin: 0 }}>
           校园基础设施智能巡检系统 - 管理面板
         </Title>
+        <div style={{ float: 'right', display: 'flex', alignItems: 'center' }}>
+          <Weather />
+        </div>
       </Header>
       <Content style={{ padding: '24px 50px' }}>
         <div className="site-layout-content" style={{ background: '#fff', padding: 24, borderRadius: 8 }}>
@@ -61,7 +65,7 @@ const App = () => {
         </div>
       </Content>
       <Footer style={{ textAlign: 'center' }}>
-        AI Campus Inspection 2026 Created by AI Assistant
+        AI Campus Inspection 2026 Created by JingXu
       </Footer>
     </Layout>
   );
