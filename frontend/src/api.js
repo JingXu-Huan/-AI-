@@ -22,3 +22,7 @@ export const writeToDB = (data, imageFile) => {
 export const updateRepairStatus = (id, status) => apiClient.put('/repairs/' + id + '/status?status=' + status);
 export const deleteRepair = (id) => apiClient.delete('/repairs/' + id);
 export const getRepairImgUrls = (id) => apiClient.get('/repairs/' + id + '/imgUrls');
+
+// 登录注册 (后端是 /user 不是 /api/user)
+export const login = (data) => axios.post('/user/login', data);
+export const register = (data) => axios.post('/user/register', data);

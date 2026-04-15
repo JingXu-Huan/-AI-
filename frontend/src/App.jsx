@@ -1,16 +1,21 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layout, Typography, message, Spin, Collapse } from 'antd';
 import RepairList from './components/RepairList';
 import UploadDetection from './components/UploadDetection';
 import Weather from './components/Weather';
+import Login from './components/Login';
 import { getAllRepairs } from './api';
 import 'antd/dist/reset.css';
 import './App.css';
+
 const { Header, Content, Footer } = Layout;
 const { Title } = Typography;
+
 const App = () => {
   const [repairs, setRepairs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('user'));
+
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
@@ -23,9 +28,24 @@ const App = () => {
       setLoading(false);
     }
   }, []);
+
   useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+    if (isLoggedIn) {
+      fetchTasks();
+    }
+  }, [isLoggedIn, fetchTasks]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    setIsLoggedIn(false);
+  };
+
+  // 未登录显示登录页
+  if (!isLoggedIn) {
+    return <Login onLogin={(user) => setIsLoggedIn(true)} />;
+  }
+
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   const collapseItems = [
     {
@@ -50,7 +70,9 @@ const App = () => {
         <Title level={3} style={{ color: 'white', lineHeight: '64px', float: 'left', margin: 0 }}>
           校园基础设施智能巡检系统 - 管理面板
         </Title>
-        <div style={{ float: 'right', display: 'flex', alignItems: 'center' }}>
+        <div style={{ float: 'right', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span style={{ color: '#fff' }}>👤 {user.nickname}</span>
+          <span onClick={handleLogout} style={{ color: '#fff', cursor: 'pointer' }}>退出</span>
           <Weather />
         </div>
       </Header>
@@ -65,9 +87,10 @@ const App = () => {
         </div>
       </Content>
       <Footer style={{ textAlign: 'center' }}>
-        AI Campus Inspection 2026 Created by JingXu
+        AI Campus Inspection 2026 Created by JingXu's Group
       </Footer>
     </Layout>
   );
 };
+
 export default App;
