@@ -27,7 +27,7 @@ const Weather = () => {
   }, []);
 
   return (
-    <div style={{ display: 'inline-block', marginLeft: '24px', lineHeight: '64px' }}>
+    <div style={{ display: 'inline-block', lineHeight: '64px' }}>
       {loading ? (
         <Text style={{ color: '#fff' }}>🌤️ 加载中...</Text>
       ) : (

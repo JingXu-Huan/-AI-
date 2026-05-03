@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Upload, Button, Form, Input, InputNumber, message, Card, Tag, Tabs, Collapse, Row, Col, Statistic } from 'antd';
 import { UploadOutlined, SendOutlined, LeftOutlined, RightOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import { writeToDB, analyze } from '../api';
+import DroneTask from './DroneTask';
 import './UploadDetection.css';
 
 // 聚合检测结果为 DetectionResult 格式
@@ -330,24 +331,33 @@ const UploadDetection = ({ onTaskAdded }) => {
         </Tabs.TabPane>
 
         <Tabs.TabPane tab="🎥 摄像头 / RTSP 流" key="stream">
-          <Form form={streamForm} layout="vertical" initialValues={{ location: '大门主干道', stream_url: '0', max_frames: 100 }} onFinish={handleLiveStart}>
-            <Form.Item name="location" label="预设位置标签" rules={[{ required: true }]}>
-              <Input size="large" />
-            </Form.Item>
-            <Form.Item name="stream_url" label="流地址或摄像头ID" rules={[{ required: true }]}>
-              <Input placeholder="输入 0 打开本地摄像头，或 rtsp://..." size="large" />
-            </Form.Item>
-            <Form.Item name="max_frames" label="最大采流帧数" rules={[{ required: true }]}>
-              <Input type="number" min={5} size="large" />
-            </Form.Item>
-            <Form.Item>
-              {!isLive ? (
-                <Button type="primary" htmlType="submit" size="large" block>📡 开始实时流分析</Button>
-              ) : (
-                <Button danger type="primary" size="large" block onClick={handleLiveStop}>🛑 结束推流</Button>
-              )}
-            </Form.Item>
-          </Form>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={16}>
+              <Form form={streamForm} layout="vertical" initialValues={{ location: '大门主干道', stream_url: '0', max_frames: 100 }} onFinish={handleLiveStart}>
+                <Form.Item name="location" label="预设位置标签" rules={[{ required: true }]}>
+                  <Input size="large" />
+                </Form.Item>
+                <Form.Item name="stream_url" label="流地址或摄像头ID" rules={[{ required: true }]}>
+                  <Input placeholder="输入 0 打开本地摄像头，或 rtsp://..." size="large" />
+                </Form.Item>
+                <Form.Item name="max_frames" label="最大采流帧数" rules={[{ required: true }]}>
+                  <Input type="number" min={5} size="large" />
+                </Form.Item>
+                <Form.Item>
+                  {!isLive ? (
+                    <Button type="primary" htmlType="submit" size="large" block>📡 开始实时流分析</Button>
+                  ) : (
+                    <Button danger type="primary" size="large" block onClick={handleLiveStop}>🛑 结束推流</Button>
+                  )}
+                </Form.Item>
+              </Form>
+            </Col>
+            <Col xs={24} lg={8}>
+              <Card title="🛸 无人机任务调度" size="small">
+                <DroneTask compact />
+              </Card>
+            </Col>
+          </Row>
         </Tabs.TabPane>
       </Tabs>
       )}

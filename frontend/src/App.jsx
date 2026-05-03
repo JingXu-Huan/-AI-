@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Typography, message, Spin, Collapse } from 'antd';
+import { Layout, Typography, message, Spin, Collapse, Button, Modal } from 'antd';
+import { RocketOutlined } from '@ant-design/icons';
 import RepairList from './components/RepairList';
 import UploadDetection from './components/UploadDetection';
 import Weather from './components/Weather';
 import Login from './components/Login';
+import DroneTask from './components/DroneTask';
 import { getAllRepairs } from './api';
 import 'antd/dist/reset.css';
 import './App.css';
@@ -15,6 +17,7 @@ const App = () => {
   const [repairs, setRepairs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('user'));
+  const [droneModalOpen, setDroneModalOpen] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -66,14 +69,22 @@ const App = () => {
 
   return (
     <Layout className="layout" style={{ minHeight: '100vh' }}>
-      <Header>
+      <Header style={{ position: 'relative', height: '64px' }}>
         <Title level={3} style={{ color: 'white', lineHeight: '64px', float: 'left', margin: 0 }}>
           校园基础设施智能巡检系统 - 管理面板
         </Title>
-        <div style={{ float: 'right', display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ float: 'right', display: 'flex', alignItems: 'center', gap: '16px', height: '64px' }}>
+          <Weather />
+          <Button 
+            type="primary" 
+            icon={<RocketOutlined />} 
+            onClick={() => setDroneModalOpen(true)}
+            style={{ background: '#1890ff', borderColor: '#1890ff' }}
+          >
+            无人机调度
+          </Button>
           <span style={{ color: '#fff' }}>👤 {user.nickname}</span>
           <span onClick={handleLogout} style={{ color: '#fff', cursor: 'pointer' }}>退出</span>
-          <Weather />
         </div>
       </Header>
       <Content style={{ padding: '24px 50px' }}>
@@ -89,6 +100,17 @@ const App = () => {
       <Footer style={{ textAlign: 'center' }}>
         AI Campus Inspection 2026 Created by JingXu's Group
       </Footer>
+
+      <Modal
+        title={<><RocketOutlined /> 无人机任务调度</>}
+        open={droneModalOpen}
+        onCancel={() => setDroneModalOpen(false)}
+        footer={null}
+        width={1200}
+        style={{ top: 20 }}
+      >
+        <DroneTask />
+      </Modal>
     </Layout>
   );
 };

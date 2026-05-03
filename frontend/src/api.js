@@ -26,3 +26,19 @@ export const getRepairImgUrls = (id) => apiClient.get('/repairs/' + id + '/imgUr
 // 登录注册 (后端是 /user 不是 /api/user)
 export const login = (data) => axios.post('/user/login', data);
 export const register = (data) => axios.post('/user/register', data);
+
+// 无人机任务 API (后端路径已经是 /fly/*，不用加 /api 前缀)
+export const getAllDrones = () => axios.get('/fly/all');
+export const getDroneStatus = (droneNo) => axios.get('/fly/status?droneNo=' + droneNo);
+export const getTaskList = (droneNo, status) => {
+  const params = new URLSearchParams();
+  if (droneNo) params.append('droneNo', droneNo);
+  if (status) params.append('status', status);
+  return axios.get('/fly/task/list?' + params.toString());
+};
+export const getTaskQueue = () => axios.get('/fly/queue');
+export const addTask = (data) => axios.put('/fly/addTask', data);
+export const cancelTask = (id) => axios.delete('/fly/task/' + id);
+export const retryTask = (id) => axios.put('/fly/task/' + id + '/status?status=queued');
+export const addDrone = (data) => axios.put('/fly/drone', data);
+export const getTasksByDrone = (droneNo) => axios.get('/fly/task/list?droneNo=' + droneNo);
