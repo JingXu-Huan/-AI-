@@ -42,3 +42,5 @@ export const cancelTask = (id) => axios.delete('/fly/task/' + id);
 export const retryTask = (id) => axios.put('/fly/task/' + id + '/status?status=queued');
 export const addDrone = (data) => axios.put('/fly/drone', data);
 export const getTasksByDrone = (droneNo) => axios.get('/fly/task/list?droneNo=' + droneNo);
+export const getTaskImages = (limit) => axios.get('/fly/randRes?limit=' + (limit || 10));
+export const getTaskImage = (filename) => axios.get('/fly/image/' + filename);

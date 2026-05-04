@@ -36,7 +36,8 @@ const DroneMap = ({ onPointsChange, initialPoints = [] }) => {
     return null;
   };
   
-  const removePoint = (index) => {
+  const removePoint = (index, e) => {
+    e.stopPropagation(); // 阻止冒泡，避免触发 map 点击
     const newPoints = points.filter((_, i) => i !== index);
     setPoints(newPoints);
     onPointsChange?.(newPoints);
@@ -59,7 +60,7 @@ const DroneMap = ({ onPointsChange, initialPoints = [] }) => {
             <Popup>
               <Space direction="vertical">
                 <div>点 {i + 1}: {p.lat.toFixed(6)}, {p.lng.toFixed(6)}</div>
-                <Button size="small" danger onClick={() => removePoint(i)}>删除</Button>
+                <Button size="small" danger onClick={(e) => removePoint(i, e)}>删除</Button>
               </Space>
             </Popup>
           </Marker>

@@ -10,10 +10,33 @@ const Weather = () => {
   useEffect(() => {
     const fetchWeather = async () => {
       try {
-        // 使用 wttr.in 获取信阳天气
-        const res = await fetch('https://wttr.in/%E4%BF%A1%E9%98%B3?format=%c+%t+%h&lang=zh');
-        const text = await res.text();
-        setWeather(text);
+        // 使用 wttr.in JSON 格式获取信阳天气
+        const res = await fetch('https://wttr.in/Xinyang?format=j1');
+        const json = await res.json();
+        const curr = json.current_condition?.[0];
+        if (curr) {
+          const temp = curr.temp_C;
+          const humidity = curr.humidity;
+          const weatherCode = curr.weatherCode;
+          // 天气代码映射
+          const weatherEmoji = {
+            '113': '☀️', '116': '⛅', '119': '☁️', '122': '🌫️',
+            '176': '🌧️', '179': '🌨️', '182': '🌧️', '185': '🌨️',
+            '200': '⛈️', '227': '🌨️', '230': '🌨️', '248': '🌫️',
+            '260': '🌫️', '263': '🌧️', '266': '🌧️', '281': '🌧️',
+            '284': '🌧️', '293': '🌧️', '296': '🌧️', '299': '🌧️',
+            '302': '🌧️', '305': '🌧️', '308': '🌧️', '311': '🌧️',
+            '314': '🌧️', '317': '🌧️', '320': '🌨️', '323': '🌨️',
+            '326': '🌨️', '329': '🌨️', '332': '🌨️', '335': '🌨️',
+            '338': '🌨️', '350': '🌧️', '353': '🌧️', '356': '🌧️',
+            '359': '🌧️', '362': '🌧️', '365': '🌧️', '368': '🌧️',
+            '371': '🌨️', '373': '🌧️', '374': '🌨️', '376': '🌧️',
+            '379': '🌨️', '386': '⛈️', '389': '⛈️', '392': '⛈️', '395': '⛈️',
+          };
+          setWeather(`${weatherEmoji[weatherCode] || '🌤️'} ${temp}°C ${humidity}%`);
+        } else {
+          setWeather('获取天气失败');
+        }
       } catch (e) {
         setWeather('获取天气失败');
       } finally {
