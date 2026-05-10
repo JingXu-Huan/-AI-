@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { Upload, Button, Form, Input, InputNumber, message, Card, Tag, Tabs, Collapse, Row, Col, Statistic } from 'antd';
 import { UploadOutlined, SendOutlined, LeftOutlined, RightOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import { writeToDB, analyze } from '../api';
-import DroneTask from './DroneTask';
 import './UploadDetection.css';
 
 // 聚合检测结果为 DetectionResult 格式
@@ -192,11 +191,28 @@ const UploadDetection = ({ onTaskAdded }) => {
     setFetchingAI(prev => ({ ...prev, [location]: true }));
     try {
       const items = groupedResults[location] || [];
-      const aggregated = aggregateResults(items);
-      // 无状态调用，使用 id=0 表示非关联到具体维修任务
-      aggregated.location = location;
-      aggregated.id = 0;
-      const aiResponse = await analyze(aggregated);
+      // 直接传数组，不再聚合为旧的 DetectionResult 格式
+      const rawItems = items.map(it => {
+        // 从 formattedResults 中恢复原始字段（如果需要），或者直接用当初 push 进来的字段
+        // 注意：formattedResults 里的 i.bbox 是字符串，而后端想要对象。
+        // 实际上 rawDetections 已经有我们要的结构了。
+        // 我们从 rawDetections 过滤出该区域的并添加 damage_length
+        const rawList = (rawDetections || []).map((rd, idx) => {
+          const bb = rd.bounding_box || {};
+          const damage_length = rd.damage_length || (bb.x2 ? Math.sqrt(Math.pow(bb.x2-bb.x1, 2) + Math.pow(bb.y2-bb.y1, 2)).toFixed(2) : 0);
+          return {
+            type: rd.type || rd.class_name,
+            confidence: rd.confidence,
+            location: location,
+            severity: (rd.severity || 'low').toLowerCase(),
+            bounding_box: bb,
+            damage_length: parseFloat(damage_length)
+          };
+        });
+        return rawList;
+      })[0]; // 这里 items 对应的其实是同一个 location
+
+      const aiResponse = await analyze(rawItems, 0);
       setAiReports(prev => ({ ...prev, [location]: aiResponse.data.data || {} }));
       message.success(`区域 "${location}" AI 维修建议已生成！`);
     } catch (e) { message.error('生成报告失败'); } 
@@ -264,11 +280,28 @@ const UploadDetection = ({ onTaskAdded }) => {
     try {
       for (const location of locations) {
         const items = groupedResults[location] || [];
-        const aggregated = aggregateResults(items);
-        // 无状态调用（批量/区域分析），id=0 表示不关联到数据库中的某个任务
-        aggregated.location = location;
-        aggregated.id = 0;
-        const aiResponse = await analyze(aggregated);
+        const rawList = items.map(it => {
+          // it 是来自 formattedResults
+          // 我们需要重建后端要求的结构
+          let bb = {x1:0, y1:0, x2:0, y2:0};
+          if (it.bbox && typeof it.bbox === 'string') {
+            const match = it.bbox.match(/\[(.*),(.*),(.*),(.*)\]/);
+            if (match) {
+              bb = { x1: parseFloat(match[1]), y1: parseFloat(match[2]), x2: parseFloat(match[3]), y2: parseFloat(match[4]) };
+            }
+          }
+          const damage_length = Math.sqrt(Math.pow(bb.x2-bb.x1, 2) + Math.pow(bb.y2-bb.y1, 2));
+          return {
+            type: it.type,
+            confidence: it.confidence,
+            location: location,
+            severity: it.severity,
+            bounding_box: bb,
+            damage_length: parseFloat(damage_length.toFixed(2))
+          };
+        });
+
+        const aiResponse = await analyze(rawList, 0);
         setAiReports(prev => ({ ...prev, [location]: aiResponse.data.data || {} }));
       }
       message.success('所有区域 AI 维修建议已生成！');
@@ -288,6 +321,12 @@ const UploadDetection = ({ onTaskAdded }) => {
               <Tag color="blue">{parsed.problemType || '未知问题'}</Tag>
               <Tag color={parsed.priority === '高' ? 'red' : parsed.priority === '中' ? 'orange' : 'green'}>{parsed.priority || '未知'}</Tag>
             </div>
+            {parsed.damage_length && (
+              <div style={{ marginBottom: '4px' }}>
+                <strong>📏 破损长度:</strong> <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{parsed.damage_length}</span>
+              </div>
+            )}
+            <div><strong>📍 位置:</strong> <span style={{ color: '#666' }}>{parsed.location || '未知'}</span></div>
             <div><strong>🛠️ 原因:</strong> <span style={{ color: '#666' }}>{parsed.cause || '未知'}</span></div>
             <div><strong>✅ 方案:</strong> <span style={{ color: '#666' }}>{parsed.repairPlan || '未知'}</span></div>
             <div><strong>⏱️ 工期:</strong> <span style={{ color: '#666' }}>{parsed.estimatedTime || '未知'}</span></div>
@@ -331,33 +370,24 @@ const UploadDetection = ({ onTaskAdded }) => {
         </Tabs.TabPane>
 
         <Tabs.TabPane tab="🎥 摄像头 / RTSP 流" key="stream">
-          <Row gutter={[16, 16]}>
-            <Col xs={24} lg={16}>
-              <Form form={streamForm} layout="vertical" initialValues={{ location: '大门主干道', stream_url: '0', max_frames: 100 }} onFinish={handleLiveStart}>
-                <Form.Item name="location" label="预设位置标签" rules={[{ required: true }]}>
-                  <Input size="large" />
-                </Form.Item>
-                <Form.Item name="stream_url" label="流地址或摄像头ID" rules={[{ required: true }]}>
-                  <Input placeholder="输入 0 打开本地摄像头，或 rtsp://..." size="large" />
-                </Form.Item>
-                <Form.Item name="max_frames" label="最大采流帧数" rules={[{ required: true }]}>
-                  <Input type="number" min={5} size="large" />
-                </Form.Item>
-                <Form.Item>
-                  {!isLive ? (
-                    <Button type="primary" htmlType="submit" size="large" block>📡 开始实时流分析</Button>
-                  ) : (
-                    <Button danger type="primary" size="large" block onClick={handleLiveStop}>🛑 结束推流</Button>
-                  )}
-                </Form.Item>
-              </Form>
-            </Col>
-            <Col xs={24} lg={8}>
-              <Card title="🛸 无人机任务调度" size="small">
-                <DroneTask compact />
-              </Card>
-            </Col>
-          </Row>
+          <Form form={streamForm} layout="vertical" initialValues={{ location: '大门主干道', stream_url: '0', max_frames: 100 }} onFinish={handleLiveStart}>
+            <Form.Item name="location" label="预设位置标签" rules={[{ required: true }]}>
+              <Input size="large" />
+            </Form.Item>
+            <Form.Item name="stream_url" label="流地址或摄像头ID" rules={[{ required: true }]}>
+              <Input placeholder="输入 0 打开本地摄像头，或 rtsp://..." size="large" />
+            </Form.Item>
+            <Form.Item name="max_frames" label="最大采流帧数" rules={[{ required: true }]}>
+              <Input type="number" min={5} size="large" />
+            </Form.Item>
+            <Form.Item>
+              {!isLive ? (
+                <Button type="primary" htmlType="submit" size="large" block>📡 开始实时流分析</Button>
+              ) : (
+                <Button danger type="primary" size="large" block onClick={handleLiveStop}>🛑 结束推流</Button>
+              )}
+            </Form.Item>
+          </Form>
         </Tabs.TabPane>
       </Tabs>
       )}

@@ -16,6 +16,7 @@ JSON format:
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 
@@ -55,6 +56,12 @@ def format_detections(
     """
     structured: list[dict[str, Any]] = []
     for det in raw_results:
+        bb = det["bounding_box"]
+        # 计算对角线长度 (√(w² + h²)) 并记为道路缺陷目标长度
+        w = bb["x2"] - bb["x1"]
+        h = bb["y2"] - bb["y1"]
+        diagonal_length = math.sqrt(w**2 + h**2)
+
         record: dict[str, Any] = {
             "type": det["class_name"],
             "confidence": round(float(det["confidence"]), 4),
@@ -62,7 +69,8 @@ def format_detections(
             "severity": _get_severity(
                 float(det["confidence"]), high_threshold, medium_threshold
             ),
-            "bounding_box": det["bounding_box"],
+            "bounding_box": bb,
+            "damage_length": round(diagonal_length, 2),
         }
         structured.append(record)
     return structured

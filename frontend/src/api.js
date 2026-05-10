@@ -9,7 +9,10 @@ export const getAllRepairs = () => apiClient.get('/repairs');
 export const getRepairsByStatus = (status) => apiClient.get('/repairs/status/' + status);
 export const getRepairById = (id) => apiClient.get('/repairs/' + id);
 export const getDescFromAI = (data) => apiClient.post('/getDesc', data);
-export const analyze = (data) => apiClient.post('/analyze', data);
+export const analyze = (data, id) => {
+  const url = id !== undefined ? `/analyze?id=${id}` : '/analyze';
+  return apiClient.post(url, data);
+};
 export const writeToDB = (data, imageFile) => {
   const formData = new FormData();
   formData.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }));
@@ -23,11 +26,11 @@ export const updateRepairStatus = (id, status) => apiClient.put('/repairs/' + id
 export const deleteRepair = (id) => apiClient.delete('/repairs/' + id);
 export const getRepairImgUrls = (id) => apiClient.get('/repairs/' + id + '/imgUrls');
 
-// 登录注册 (后端是 /user 不是 /api/user)
+// 登录注册
 export const login = (data) => axios.post('/user/login', data);
 export const register = (data) => axios.post('/user/register', data);
 
-// 无人机任务 API (后端路径已经是 /fly/*，不用加 /api 前缀)
+// 无人机任务 API
 export const getAllDrones = () => axios.get('/fly/all');
 export const getDroneStatus = (droneNo) => axios.get('/fly/status?droneNo=' + droneNo);
 export const getTaskList = (droneNo, status) => {
@@ -44,3 +47,5 @@ export const addDrone = (data) => axios.put('/fly/drone', data);
 export const getTasksByDrone = (droneNo) => axios.get('/fly/task/list?droneNo=' + droneNo);
 export const getTaskImages = (limit) => axios.get('/fly/randRes?limit=' + (limit || 10));
 export const getTaskImage = (filename) => axios.get('/fly/image/' + filename);
+export const updateTaskStatus = (id, status) => axios.put('/fly/task/' + id + '/status?status=' + status);
+export const updateTaskProgress = (id, progress) => axios.put('/fly/task/' + id + '/progress?progress=' + progress);
