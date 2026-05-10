@@ -49,3 +49,75 @@ export const getTaskImages = (limit) => axios.get('/fly/randRes?limit=' + (limit
 export const getTaskImage = (filename) => axios.get('/fly/image/' + filename);
 export const updateTaskStatus = (id, status) => axios.put('/fly/task/' + id + '/status?status=' + status);
 export const updateTaskProgress = (id, progress) => axios.put('/fly/task/' + id + '/progress?progress=' + progress);
+
+// 智能对话 API
+export const chat = (sessionId, message) => apiClient.post('/conversation/chat', {
+  sessionId: sessionId,
+  message: message
+});
+
+export const chatStream = async (sessionId, message, onChunk, onError, onComplete) => {
+  try {
+    const response = await fetch('/api/conversation/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({
+        message: message,
+        enableRag: true,
+        sessionId: sessionId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      // 处理SSE数据格式
+      const lines = chunk.split('\n');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') {
+            if (onComplete) onComplete(fullResponse);
+            return fullResponse;
+          }
+          
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.content) {
+              fullResponse += parsed.content;
+              if (onChunk) onChunk(parsed.content, fullResponse);
+            }
+          } catch (e) {
+            // 如果不是JSON格式，直接添加文本
+            fullResponse += data;
+            if (onChunk) onChunk(data, fullResponse);
+          }
+        }
+      }
+    }
+    
+    if (onComplete) onComplete(fullResponse);
+    return fullResponse;
+  } catch (error) {
+    if (onError) onError(error);
+    throw error;
+  }
+};
+
+export const getConversationHistory = (sessionId) => apiClient.get('/conversation/history/' + sessionId);
+
+export const clearConversationHistory = (sessionId) => apiClient.delete('/conversation/history/' + sessionId);

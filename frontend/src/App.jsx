@@ -6,6 +6,7 @@ import UploadDetection from './components/UploadDetection';
 import Weather from './components/Weather';
 import Login from './components/Login';
 import DroneTask from './components/DroneTask';
+import ChatBotIcon from './components/ChatBotIcon';
 import { getAllRepairs } from './api';
 import 'antd/dist/reset.css';
 import './App.css';
@@ -111,6 +112,8 @@ const App = () => {
       >
         <DroneTask />
       </Modal>
+      
+      <ChatBotIcon />
     </Layout>
   );
 };
